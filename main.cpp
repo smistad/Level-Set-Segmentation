@@ -107,7 +107,7 @@ Volume<float> * runLevelSet(
 
 
     // Create seed
-    char narrowBandDistance = 10;
+    char narrowBandDistance = 4;
     cl::Kernel createSeedKernel(ocl.program, "initializeLevelSetFunction");
     createSeedKernel.setArg(0, phi_1);
     createSeedKernel.setArg(1, seedPos.x);
@@ -124,13 +124,8 @@ Volume<float> * runLevelSet(
             cl::NullRange
     );
 
-    HistogramPyramid3D hp(ocl);
-    hp.create(activeSet, size.x, size.y, size.z);
-    int activeVoxels = hp.getSum();
-    std::cout << "Number of active voxels: " << activeVoxels << std::endl;
-    cl::Buffer positions = hp.createPositionBuffer();
 
-    cl::Kernel kernel(ocl.program, "updateLevelSetFunction");
+    cl::Kernel init3DImage(ocl.program, "init3DImage");
     cl::size_t<3> origin;
     origin[0] = 0;
     origin[1] = 0;
@@ -140,13 +135,49 @@ Volume<float> * runLevelSet(
     region[1] = size.y;
     region[2] = size.z;
 
-    for(int i = 0; i < iterations; i++) {
-        if(i % 2 == 0) {
-            updateLevelSetFunction(ocl, kernel, inputData, positions, activeVoxels, phi_1, phi_2, threshold, epsilon, alpha);
-        } else {
-            updateLevelSetFunction(ocl, kernel, inputData, positions, activeVoxels, phi_2, phi_1, threshold, epsilon, alpha);
+
+
+    int narrowBands = 200;
+    for(int i = 0; i < narrowBands; i++) {
+        HistogramPyramid3D hp(ocl);
+        hp.create(activeSet, size.x, size.y, size.z);
+        int activeVoxels = hp.getSum();
+        std::cout << "Number of active voxels: " << activeVoxels << std::endl;
+        cl::Buffer positions = hp.createPositionBuffer();
+
+        cl::Kernel kernel(ocl.program, "updateLevelSetFunction");
+        for(int j = 0; j < iterations; j++) {
+            if(j % 2 == 0) {
+                updateLevelSetFunction(ocl, kernel, inputData, positions, activeVoxels, phi_1, phi_2, threshold, epsilon, alpha);
+            } else {
+                updateLevelSetFunction(ocl, kernel, inputData, positions, activeVoxels, phi_2, phi_1, threshold, epsilon, alpha);
+            }
         }
+
+        init3DImage.setArg(0, activeSet);
+        ocl.queue.enqueueNDRangeKernel(
+            init3DImage,
+            cl::NullRange,
+            cl::NDRange(size.x,size.y,size.z),
+            cl::NullRange
+        );
+
+        // Create new active set
+        cl::Kernel updateActiveSetKernel(ocl.program, "updateActiveSet");
+        updateActiveSetKernel.setArg(0, positions);
+        updateActiveSetKernel.setArg(1, phi_1);
+        updateActiveSetKernel.setArg(2, activeSet);
+        updateActiveSetKernel.setArg(3, narrowBandDistance);
+        ocl.queue.enqueueNDRangeKernel(
+            updateActiveSetKernel,
+            cl::NullRange,
+            cl::NDRange(activeVoxels),
+            cl::NullRange
+        );
     }
+
+
+
     if(iterations % 2 != 0) {
         // Phi_2 was written to in the last iteration, copy this to the result
         ocl.queue.enqueueCopyImage(phi_2,phi_1,origin,origin,region);

@@ -145,6 +145,49 @@ __kernel void initializeLevelSetFunction(
     }
 }
 
+// Intialize 3D image to 0
+__kernel void init3DImage(
+    __write_only image3d_t image
+    ) {
+    write_imagei(image, (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0), 0);
+}
+
+
+__kernel void updateActiveSet(
+        __global int * positions,
+        __read_only image3d_t phi,
+        __write_only image3d_t activeSet,
+        __private char narrowBandDistance
+        ) {
+    const int3 position = vload3(get_global_id(0), positions);
+    // if voxel is border voxel
+    bool isBorderVoxels = false, negativeFound = false, positiveFound = false;
+    for(int x = -1; x < 2; x++) {
+    for(int y = -1; y < 2; y++) {
+    for(int z = -1; z < 2; z++) {
+        int3 n = position + (int3)(x,y,z);
+        if(read_imagef(phi, sampler, n.xyzz).x < 0.0f) {
+            negativeFound = true;
+        }else{
+            positiveFound = true;
+        }
+    }}}
+    isBorderVoxels = negativeFound && positiveFound;
+
+    // Add all neighbors to activeSet
+    if(isBorderVoxels) {
+        for(int x = -narrowBandDistance; x < narrowBandDistance; x++) {
+        for(int y = -narrowBandDistance; y < narrowBandDistance; y++) {
+        for(int z = -narrowBandDistance; z < narrowBandDistance; z++) {
+            if(length((float3)(x,y,z)) > narrowBandDistance)
+                continue;
+
+            int3 n = position + (int3)(x,y,z);
+            write_imagei(activeSet, n.xyzz, 1);
+        }}}
+    }
+}
+
 __constant int4 cubeOffsets2D[4] = {
     {0, 0, 0, 0},
     {0, 1, 0, 0},
