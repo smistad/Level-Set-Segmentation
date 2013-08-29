@@ -1,6 +1,7 @@
 #include "SIPL/Core.hpp"
 #include "SIPL/Visualization.hpp"
-#include "OpenCLUtilities/openCLUtilities.hpp"
+#include "commons.hpp"
+#include "histogram-pyramids.hpp"
 #include <iostream>
 using namespace SIPL;
 using namespace std;
@@ -11,69 +12,35 @@ using namespace std;
 #ifndef KERNELS_DIR
 #define KERNELS_DIR ""
 #endif
-
-typedef struct OpenCL {
-    cl::Context context;
-    cl::CommandQueue queue;
-    cl::Program program;
-    cl::Device device;
-} OpenCL;
-
 void updateLevelSetFunction(
         OpenCL &ocl,
         cl::Kernel &kernel,
         cl::Image3D &input,
+        cl::Buffer &positions,
+        int activeVoxels,
         cl::Image3D &phi_read,
         cl::Image3D &phi_write,
-        int3 size,
         float threshold,
         float epsilon,
         float alpha
         ) {
 
     kernel.setArg(0, input);
-    kernel.setArg(1, phi_read);
-    kernel.setArg(2, phi_write);
-    kernel.setArg(3, threshold);
-    kernel.setArg(4, epsilon);
-    kernel.setArg(5, alpha);
+    kernel.setArg(1, positions);
+    kernel.setArg(2, activeVoxels);
+    kernel.setArg(3, phi_read);
+    kernel.setArg(4, phi_write);
+    kernel.setArg(5, threshold);
+    kernel.setArg(6, epsilon);
+    kernel.setArg(7, alpha);
 
     ocl.queue.enqueueNDRangeKernel(
             kernel,
             cl::NullRange,
-            cl::NDRange(size.x,size.y,size.z),
+            cl::NDRange(activeVoxels),
             cl::NullRange
     );
 }
-
-void updateLevelSetFunction(
-        OpenCL &ocl,
-        cl::Kernel &kernel,
-        cl::Image3D &input,
-        cl::Image3D &phi_read,
-        cl::Buffer &phi_write,
-        int3 size,
-        float threshold,
-        float epsilon,
-        float alpha
-        ) {
-
-    kernel.setArg(0, input);
-    kernel.setArg(1, phi_read);
-    kernel.setArg(2, phi_write);
-    kernel.setArg(3, threshold);
-    kernel.setArg(4, epsilon);
-    kernel.setArg(5, alpha);
-
-
-    ocl.queue.enqueueNDRangeKernel(
-            kernel,
-            cl::NullRange,
-            cl::NDRange(size.x,size.y,size.z),
-            cl::NullRange
-    );
-}
-
 
 void visualize(Volume<float> * input, Volume<float> * phi, float level, float window) {
     Volume<char> * seg = new Volume<char>(input->getSize());
@@ -120,20 +87,48 @@ Volume<float> * runLevelSet(
             input->getHeight(),
             input->getDepth()
     );
+    cl::Image3D phi_2 = cl::Image3D(
+        ocl.context,
+        CL_MEM_READ_WRITE,
+        cl::ImageFormat(CL_R, CL_FLOAT),
+        input->getWidth(),
+        input->getHeight(),
+        input->getDepth()
+    );
+
+    cl::Image3D activeSet = cl::Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            cl::ImageFormat(CL_R, CL_SIGNED_INT8),
+            input->getWidth(),
+            input->getHeight(),
+            input->getDepth()
+    );
+
 
     // Create seed
+    char narrowBandDistance = 10;
     cl::Kernel createSeedKernel(ocl.program, "initializeLevelSetFunction");
     createSeedKernel.setArg(0, phi_1);
     createSeedKernel.setArg(1, seedPos.x);
     createSeedKernel.setArg(2, seedPos.y);
     createSeedKernel.setArg(3, seedPos.z);
     createSeedKernel.setArg(4, seedRadius);
+    createSeedKernel.setArg(5, activeSet);
+    createSeedKernel.setArg(6, narrowBandDistance);
+    createSeedKernel.setArg(7, phi_2);
     ocl.queue.enqueueNDRangeKernel(
             createSeedKernel,
             cl::NullRange,
             cl::NDRange(size.x,size.y,size.z),
             cl::NullRange
     );
+
+    HistogramPyramid3D hp(ocl);
+    hp.create(activeSet, size.x, size.y, size.z);
+    int activeVoxels = hp.getSum();
+    std::cout << "Number of active voxels: " << activeVoxels << std::endl;
+    cl::Buffer positions = hp.createPositionBuffer();
 
     cl::Kernel kernel(ocl.program, "updateLevelSetFunction");
     cl::size_t<3> origin;
@@ -145,45 +140,16 @@ Volume<float> * runLevelSet(
     region[1] = size.y;
     region[2] = size.z;
 
-    if(ocl.device.getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") == 0) {
-        // Create auxillary buffer
-        cl::Buffer writeBuffer = cl::Buffer(
-                ocl.context,
-                CL_MEM_WRITE_ONLY,
-                sizeof(float)*size.x*size.y*size.z
-        );
-
-        for(int i = 0; i < iterations; i++) {
-            updateLevelSetFunction(ocl, kernel, inputData, phi_1, writeBuffer, size, threshold, epsilon, alpha);
-            ocl.queue.enqueueCopyBufferToImage(
-                    writeBuffer,
-                    phi_1,
-                    0,
-                    origin,
-                    region
-            );
+    for(int i = 0; i < iterations; i++) {
+        if(i % 2 == 0) {
+            updateLevelSetFunction(ocl, kernel, inputData, positions, activeVoxels, phi_1, phi_2, threshold, epsilon, alpha);
+        } else {
+            updateLevelSetFunction(ocl, kernel, inputData, positions, activeVoxels, phi_2, phi_1, threshold, epsilon, alpha);
         }
-    } else {
-        cl::Image3D phi_2 = cl::Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE,
-            cl::ImageFormat(CL_R, CL_FLOAT),
-            input->getWidth(),
-            input->getHeight(),
-            input->getDepth()
-        );
-
-        for(int i = 0; i < iterations; i++) {
-            if(i % 2 == 0) {
-                updateLevelSetFunction(ocl, kernel, inputData, phi_1, phi_2, size, threshold, epsilon, alpha);
-            } else {
-                updateLevelSetFunction(ocl, kernel, inputData, phi_2, phi_1, size, threshold, epsilon, alpha);
-            }
-        }
-        if(iterations % 2 != 0) {
-            // Phi_2 was written to in the last iteration, copy this to the result
-            ocl.queue.enqueueCopyImage(phi_2,phi_1,origin,origin,region);
-        }
+    }
+    if(iterations % 2 != 0) {
+        // Phi_2 was written to in the last iteration, copy this to the result
+        ocl.queue.enqueueCopyImage(phi_2,phi_1,origin,origin,region);
     }
 
     Volume<float> * phi = new Volume<float>(input->getSize());
