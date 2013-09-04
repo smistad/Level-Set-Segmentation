@@ -130,7 +130,8 @@ __kernel void initializeLevelSetFunction(
         __private float radius,
         __write_only image3d_t activeSet,
         __private char narrowBandDistance,
-        PHI_WRITE_TYPE phi_2
+        PHI_WRITE_TYPE phi_2,
+        __write_only image3d_t borderSet
         ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
 
@@ -140,8 +141,14 @@ __kernel void initializeLevelSetFunction(
 
     if(fabs(dist) < narrowBandDistance) {
         write_imagei(activeSet, pos, 1);
+        if(fabs(dist) <= 1.0f) {
+            write_imagei(borderSet, pos, 1);
+        } else {
+            write_imagei(borderSet, pos, 0);
+        }
     } else {
         write_imagei(activeSet, pos, 0);
+        write_imagei(borderSet, pos, 0);
     }
 }
 
@@ -153,11 +160,124 @@ __kernel void init3DImage(
 }
 
 
+__kernel void calculateGradientPhi(
+        __read_only image3d_t phi_read,
+        __write_only image3d_t gradientPhi,
+        __read_only image3d_t input,
+        __private float threshold,
+        __private float epsilon,
+        __private float alpha
+        ) {
+    const int x = get_global_id(0);
+    const int y = get_global_id(1);
+    const int z = get_global_id(2);
+    const int4 pos = {x,y,z,0};
+
+    // Calculate all first order derivatives
+    float3 D = {
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y,z,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y,z,0)).x),
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x,y+1,z,0)).x-read_imagef(phi_read,sampler,(int4)(x,y-1,z,0)).x),
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x,y,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x,y,z-1,0)).x)
+    };
+    float3 Dminus = {
+            read_imagef(phi_read,sampler,pos).x-read_imagef(phi_read,sampler,(int4)(x-1,y,z,0)).x,
+            read_imagef(phi_read,sampler,pos).x-read_imagef(phi_read,sampler,(int4)(x,y-1,z,0)).x,
+            read_imagef(phi_read,sampler,pos).x-read_imagef(phi_read,sampler,(int4)(x,y,z-1,0)).x
+    };
+    float3 Dplus = {
+            read_imagef(phi_read,sampler,(int4)(x+1,y,z,0)).x-read_imagef(phi_read,sampler,pos).x,
+            read_imagef(phi_read,sampler,(int4)(x,y+1,z,0)).x-read_imagef(phi_read,sampler,pos).x,
+            read_imagef(phi_read,sampler,(int4)(x,y,z+1,0)).x-read_imagef(phi_read,sampler,pos).x
+    };
+
+    // Calculate gradient
+    float3 gradientMin = {
+            sqrt(pow(min(Dplus.x, 0.0f), 2.0f) + pow(min(-Dminus.x, 0.0f), 2.0f)),
+            sqrt(pow(min(Dplus.y, 0.0f), 2.0f) + pow(min(-Dminus.y, 0.0f), 2.0f)),
+            sqrt(pow(min(Dplus.z, 0.0f), 2.0f) + pow(min(-Dminus.z, 0.0f), 2.0f))
+    };
+    float3 gradientMax = {
+            sqrt(pow(max(Dplus.x, 0.0f), 2.0f) + pow(max(-Dminus.x, 0.0f), 2.0f)),
+            sqrt(pow(max(Dplus.y, 0.0f), 2.0f) + pow(max(-Dminus.y, 0.0f), 2.0f)),
+            sqrt(pow(max(Dplus.z, 0.0f), 2.0f) + pow(max(-Dminus.z, 0.0f), 2.0f))
+    };
+
+    // Calculate all second order derivatives
+    float3 DxMinus = {
+            0.0f,
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y-1,z,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y-1,z,0)).x),
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y,z-1,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y,z-1,0)).x)
+    };
+    float3 DxPlus = {
+            0.0f,
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y+1,z,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y+1,z,0)).x),
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y,z+1,0)).x)
+    };
+    float3 DyMinus = {
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x-1,y+1,z,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y-1,z,0)).x),
+            0.0f,
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x,y+1,z-1,0)).x-read_imagef(phi_read,sampler,(int4)(x,y-1,z-1,0)).x)
+    };
+    float3 DyPlus = {
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y+1,z,0)).x-read_imagef(phi_read,sampler,(int4)(x+1,y-1,z,0)).x),
+            0.0f,
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x,y+1,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x,y-1,z+1,0)).x)
+    };
+    float3 DzMinus = {
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x-1,y,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y,z-1,0)).x),
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x,y-1,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x,y-1,z-1,0)).x),
+            0.0f
+    };
+    float3 DzPlus = {
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x+1,y,z-1,0)).x),
+            0.5f*(read_imagef(phi_read,sampler,(int4)(x,y+1,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x,y+1,z-1,0)).x),
+            0.0f
+    };
+
+    // Calculate curvature
+    float3 nMinus = {
+            Dminus.x / sqrt(FLT_EPSILON+Dminus.x*Dminus.x+pow(0.5f*(DyMinus.x+D.y),2.0f)+pow(0.5f*(DzMinus.x+D.z),2.0f)),
+            Dminus.y / sqrt(FLT_EPSILON+Dminus.y*Dminus.y+pow(0.5f*(DxMinus.y+D.x),2.0f)+pow(0.5f*(DzMinus.y+D.z),2.0f)),
+            Dminus.z / sqrt(FLT_EPSILON+Dminus.z*Dminus.z+pow(0.5f*(DxMinus.z+D.x),2.0f)+pow(0.5f*(DyMinus.z+D.y),2.0f))
+    };
+    float3 nPlus = {
+            Dplus.x / sqrt(FLT_EPSILON+Dplus.x*Dplus.x+pow(0.5f*(DyPlus.x+D.y),2.0f)+pow(0.5f*(DzPlus.x+D.z),2.0f)),
+            Dplus.y / sqrt(FLT_EPSILON+Dplus.y*Dplus.y+pow(0.5f*(DxPlus.y+D.x),2.0f)+pow(0.5f*(DzPlus.y+D.z),2.0f)),
+            Dplus.z / sqrt(FLT_EPSILON+Dplus.z*Dplus.z+pow(0.5f*(DxPlus.z+D.x),2.0f)+pow(0.5f*(DyPlus.z+D.y),2.0f))
+    };
+
+    float curvature = ((nPlus.x-nMinus.x)+(nPlus.y-nMinus.y)+(nPlus.z-nMinus.z))*0.5f;
+
+    // Calculate speed term
+    float speed = -alpha*(epsilon-fabs(threshold-read_imagef(input,sampler,pos).x)) + (1.0f-alpha)*curvature;
+
+    // Determine gradient based on speed direction
+    float3 gradient;
+    if(speed < 0) {
+        gradient = gradientMin;
+    } else {
+        gradient = gradientMax;
+    }
+     if(length(gradient) > 1.0f)
+        gradient = normalize(gradient);
+
+    // Stability CFL
+    // max(fabs(speed*gradient.length()))
+    float deltaT = 0.1f;
+
+
+    write_imagef(gradientPhi, pos, deltaT*speed*length(gradient));
+
+}
+
+
 __kernel void updateActiveSet(
         __global int * positions,
         __read_only image3d_t phi,
         __write_only image3d_t activeSet,
-        __private char narrowBandDistance
+        __private char narrowBandDistance,
+        __read_only image3d_t previousActiveSet,
+        __read_only image3d_t borderSet
         ) {
     const int3 position = vload3(get_global_id(0), positions);
     // if voxel is border voxel
@@ -176,17 +296,43 @@ __kernel void updateActiveSet(
 
     // Add all neighbors to activeSet
     if(isBorderVoxels) {
-        for(int x = -narrowBandDistance; x < narrowBandDistance; x++) {
-        for(int y = -narrowBandDistance; y < narrowBandDistance; y++) {
-        for(int z = -narrowBandDistance; z < narrowBandDistance; z++) {
-            if(length((float3)(x,y,z)) > narrowBandDistance)
-                continue;
+        if(read_imagei(borderSet, sampler, position.xyzz).x == 0) { // not converged
+            for(int x = -narrowBandDistance; x < narrowBandDistance; x++) {
+            for(int y = -narrowBandDistance; y < narrowBandDistance; y++) {
+            for(int z = -narrowBandDistance; z < narrowBandDistance; z++) {
+                if(length((float3)(x,y,z)) > narrowBandDistance)
+                    continue;
 
-            int3 n = position + (int3)(x,y,z);
-            write_imagei(activeSet, n.xyzz, 1);
-        }}}
+                int3 n = position + (int3)(x,y,z);
+                    write_imagei(activeSet, n.xyzz, 1);
+            }}}
+        }
     }
 }
+
+__kernel void updateBorderSet(
+        __write_only image3d_t borderSet,
+        __read_only image3d_t phi
+        ) {
+    const int3 position = {get_global_id(0), get_global_id(1), get_global_id(2)};
+    bool isBorderVoxels = false, negativeFound = false, positiveFound = false;
+    for(int x = -1; x < 2; x++) {
+    for(int y = -1; y < 2; y++) {
+    for(int z = -1; z < 2; z++) {
+        int3 n = position + (int3)(x,y,z);
+        if(read_imagef(phi, sampler, n.xyzz).x < 0.0f) {
+            negativeFound = true;
+        }else{
+            positiveFound = true;
+        }
+    }}}
+    isBorderVoxels = negativeFound && positiveFound;
+
+    if(isBorderVoxels) {
+        write_imagei(borderSet, position.xyzz, 1);
+    }
+}
+
 
 __constant int4 cubeOffsets2D[4] = {
     {0, 0, 0, 0},

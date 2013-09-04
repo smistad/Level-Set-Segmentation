@@ -57,6 +57,59 @@ void visualize(Volume<float> * input, Volume<float> * phi, float level, float wi
     v->display();
 }
 
+void visualizeActiveSet(OpenCL &ocl, cl::Image3D &activeSet, int3 size) {
+    char * data = new char[size.x*size.y*size.z];
+    cl::size_t<3> origin;
+    origin[0] = 0;
+    origin[1] = 0;
+    origin[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size.x;
+    region[1] = size.y;
+    region[2] = size.z;
+
+
+    ocl.queue.enqueueReadImage(
+            activeSet,
+            CL_TRUE,
+            origin,
+            region,
+            0, 0,
+            data
+    );
+
+    Volume<char> * activeSetImage = new Volume<char>(size);
+    activeSetImage->setData(data);
+    activeSetImage->display();
+}
+
+void visualizeSpeedFunction(OpenCL &ocl, cl::Image3D &speedFunction, int3 size) {
+    float * data = new float[size.x*size.y*size.z];
+    cl::size_t<3> origin;
+    origin[0] = 0;
+    origin[1] = 0;
+    origin[2] = 0;
+    cl::size_t<3> region;
+    region[0] = size.x;
+    region[1] = size.y;
+    region[2] = size.z;
+
+
+    ocl.queue.enqueueReadImage(
+            speedFunction,
+            CL_TRUE,
+            origin,
+            region,
+            0, 0,
+            data
+    );
+
+    Volume<float> * activeSetImage = new Volume<float>(size);
+    activeSetImage->setData(data);
+    activeSetImage->display();
+}
+
+
 Volume<float> * runLevelSet(
         OpenCL &ocl,
         Volume<float> * input,
@@ -105,6 +158,14 @@ Volume<float> * runLevelSet(
             input->getDepth()
     );
 
+    cl::Image3D borderSet = cl::Image3D(
+            ocl.context,
+            CL_MEM_READ_WRITE,
+            cl::ImageFormat(CL_R, CL_SIGNED_INT8),
+            input->getWidth(),
+            input->getHeight(),
+            input->getDepth()
+    );
 
     // Create seed
     char narrowBandDistance = 4;
@@ -117,6 +178,7 @@ Volume<float> * runLevelSet(
     createSeedKernel.setArg(5, activeSet);
     createSeedKernel.setArg(6, narrowBandDistance);
     createSeedKernel.setArg(7, phi_2);
+    createSeedKernel.setArg(8, borderSet);
     ocl.queue.enqueueNDRangeKernel(
             createSeedKernel,
             cl::NullRange,
@@ -134,18 +196,25 @@ Volume<float> * runLevelSet(
     region[0] = size.x;
     region[1] = size.y;
     region[2] = size.z;
+    cl::Kernel updateActiveSetKernel(ocl.program, "updateActiveSet");
+    cl::Kernel kernel(ocl.program, "updateLevelSetFunction");
+    cl::Kernel calculateGradientPhiKernel(ocl.program, "calculateGradientPhi");
+    cl::Kernel updateBorderSetKernel(ocl.program, "updateBorderSet");
 
 
-
-    int narrowBands = 200;
+    //visualizeActiveSet(ocl, activeSet, size);
+    int narrowBands = 1000;
     for(int i = 0; i < narrowBands; i++) {
+        //if(i % 10 == 0)
+        //visualizeActiveSet(ocl, activeSet, size);
         HistogramPyramid3D hp(ocl);
         hp.create(activeSet, size.x, size.y, size.z);
         int activeVoxels = hp.getSum();
+        if(activeVoxels == 0)
+            break;
         std::cout << "Number of active voxels: " << activeVoxels << std::endl;
         cl::Buffer positions = hp.createPositionBuffer();
 
-        cl::Kernel kernel(ocl.program, "updateLevelSetFunction");
         for(int j = 0; j < iterations; j++) {
             if(j % 2 == 0) {
                 updateLevelSetFunction(ocl, kernel, inputData, positions, activeVoxels, phi_1, phi_2, threshold, epsilon, alpha);
@@ -154,7 +223,16 @@ Volume<float> * runLevelSet(
             }
         }
 
-        init3DImage.setArg(0, activeSet);
+        cl::Image3D activeSet2 = cl::Image3D(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                cl::ImageFormat(CL_R, CL_SIGNED_INT8),
+                input->getWidth(),
+                input->getHeight(),
+                input->getDepth()
+        );
+
+        init3DImage.setArg(0, activeSet2);
         ocl.queue.enqueueNDRangeKernel(
             init3DImage,
             cl::NullRange,
@@ -162,18 +240,60 @@ Volume<float> * runLevelSet(
             cl::NullRange
         );
 
+        /*
+        if(i % 10 == 1000) {
+        calculateGradientPhiKernel.setArg(0, phi_1);
+        calculateGradientPhiKernel.setArg(1, phi_2);
+        calculateGradientPhiKernel.setArg(2, inputData);
+        calculateGradientPhiKernel.setArg(3, threshold);
+        calculateGradientPhiKernel.setArg(4, epsilon);
+        calculateGradientPhiKernel.setArg(5, alpha);
+        ocl.queue.enqueueNDRangeKernel(
+            calculateGradientPhiKernel,
+            cl::NullRange,
+            cl::NDRange(size.x,size.y,size.z),
+            cl::NullRange
+        );
+        visualizeSpeedFunction(ocl, phi_2, size);
+        }
+        */
+
         // Create new active set
-        cl::Kernel updateActiveSetKernel(ocl.program, "updateActiveSet");
         updateActiveSetKernel.setArg(0, positions);
         updateActiveSetKernel.setArg(1, phi_1);
-        updateActiveSetKernel.setArg(2, activeSet);
+        updateActiveSetKernel.setArg(2, activeSet2);
         updateActiveSetKernel.setArg(3, narrowBandDistance);
+        updateActiveSetKernel.setArg(4, activeSet);
+        updateActiveSetKernel.setArg(5, borderSet);
         ocl.queue.enqueueNDRangeKernel(
             updateActiveSetKernel,
             cl::NullRange,
             cl::NDRange(activeVoxels),
             cl::NullRange
         );
+
+        activeSet = activeSet2;
+
+        // Update border set
+        init3DImage.setArg(0, borderSet);
+        ocl.queue.enqueueNDRangeKernel(
+            init3DImage,
+            cl::NullRange,
+            cl::NDRange(size.x,size.y,size.z),
+            cl::NullRange
+        );
+
+        updateBorderSetKernel.setArg(0, borderSet);
+        updateBorderSetKernel.setArg(1, phi_1);
+        ocl.queue.enqueueNDRangeKernel(
+            updateBorderSetKernel,
+            cl::NullRange,
+            cl::NDRange(size.x,size.y,size.z),
+            cl::NullRange
+        );
+
+
+        hp.deleteHPlevels();
     }
 
 
