@@ -200,12 +200,11 @@ Volume<float> * runLevelSet(
     region[2] = size.z;
     cl::Kernel updateActiveSetKernel(ocl.program, "updateActiveSet");
     cl::Kernel kernel(ocl.program, "updateLevelSetFunction");
-    cl::Kernel calculateGradientPhiKernel(ocl.program, "calculateGradientPhi");
     cl::Kernel updateBorderSetKernel(ocl.program, "updateBorderSet");
 
 
     HistogramPyramid3D hp(ocl);
-    const int groupSize = 64;
+    const int groupSize = 128;
     //visualizeActiveSet(ocl, activeSet, size);
     int narrowBands = 1000;
     for(int i = 0; i < narrowBands; i++) {
@@ -217,7 +216,6 @@ Volume<float> * runLevelSet(
             break;
         int numberOfThreads = activeVoxels+groupSize-(activeVoxels-(activeVoxels / groupSize)*groupSize);
         std::cout << "Number of active voxels: " << activeVoxels << std::endl;
-        std::cout << "Number of threads: " << numberOfThreads << std::endl;
         cl::Buffer positions = hp.createPositionBuffer();
 
         for(int j = 0; j < iterations; j++) {
@@ -244,24 +242,6 @@ Volume<float> * runLevelSet(
             cl::NDRange(size.x,size.y,size.z),
             cl::NullRange
         );
-
-        /*
-        if(i % 10 == 1000) {
-        calculateGradientPhiKernel.setArg(0, phi_1);
-        calculateGradientPhiKernel.setArg(1, phi_2);
-        calculateGradientPhiKernel.setArg(2, inputData);
-        calculateGradientPhiKernel.setArg(3, threshold);
-        calculateGradientPhiKernel.setArg(4, epsilon);
-        calculateGradientPhiKernel.setArg(5, alpha);
-        ocl.queue.enqueueNDRangeKernel(
-            calculateGradientPhiKernel,
-            cl::NullRange,
-            cl::NDRange(size.x,size.y,size.z),
-            cl::NullRange
-        );
-        visualizeSpeedFunction(ocl, phi_2, size);
-        }
-        */
 
         // Create new active set
         updateActiveSetKernel.setArg(0, positions);
@@ -298,10 +278,8 @@ Volume<float> * runLevelSet(
             cl::NullRange
         );
 
-
         hp.deleteHPlevels();
     }
-
 
 
     if(iterations % 2 != 0) {
