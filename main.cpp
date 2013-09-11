@@ -18,6 +18,8 @@ void updateLevelSetFunction(
         cl::Image3D &input,
         cl::Buffer &positions,
         int activeVoxels,
+        int numberOfThreads,
+        int groupSize,
         cl::Image3D &phi_read,
         cl::Image3D &phi_write,
         float threshold,
@@ -37,8 +39,8 @@ void updateLevelSetFunction(
     ocl.queue.enqueueNDRangeKernel(
             kernel,
             cl::NullRange,
-            cl::NDRange(activeVoxels),
-            cl::NullRange
+            cl::NDRange(numberOfThreads),
+            cl::NDRange(groupSize)
     );
 }
 
@@ -202,24 +204,27 @@ Volume<float> * runLevelSet(
     cl::Kernel updateBorderSetKernel(ocl.program, "updateBorderSet");
 
 
+    HistogramPyramid3D hp(ocl);
+    const int groupSize = 64;
     //visualizeActiveSet(ocl, activeSet, size);
     int narrowBands = 1000;
     for(int i = 0; i < narrowBands; i++) {
         //if(i % 10 == 0)
         //visualizeActiveSet(ocl, activeSet, size);
-        HistogramPyramid3D hp(ocl);
         hp.create(activeSet, size.x, size.y, size.z);
         int activeVoxels = hp.getSum();
         if(activeVoxels == 0)
             break;
+        int numberOfThreads = activeVoxels+groupSize-(activeVoxels-(activeVoxels / groupSize)*groupSize);
         std::cout << "Number of active voxels: " << activeVoxels << std::endl;
+        std::cout << "Number of threads: " << numberOfThreads << std::endl;
         cl::Buffer positions = hp.createPositionBuffer();
 
         for(int j = 0; j < iterations; j++) {
             if(j % 2 == 0) {
-                updateLevelSetFunction(ocl, kernel, inputData, positions, activeVoxels, phi_1, phi_2, threshold, epsilon, alpha);
+                updateLevelSetFunction(ocl, kernel, inputData, positions, activeVoxels, numberOfThreads, groupSize, phi_1, phi_2, threshold, epsilon, alpha);
             } else {
-                updateLevelSetFunction(ocl, kernel, inputData, positions, activeVoxels, phi_2, phi_1, threshold, epsilon, alpha);
+                updateLevelSetFunction(ocl, kernel, inputData, positions, activeVoxels, numberOfThreads, groupSize, phi_2, phi_1, threshold, epsilon, alpha);
             }
         }
 
@@ -265,11 +270,12 @@ Volume<float> * runLevelSet(
         updateActiveSetKernel.setArg(3, narrowBandDistance);
         updateActiveSetKernel.setArg(4, activeSet);
         updateActiveSetKernel.setArg(5, borderSet);
+        updateActiveSetKernel.setArg(6, activeVoxels);
         ocl.queue.enqueueNDRangeKernel(
             updateActiveSetKernel,
             cl::NullRange,
-            cl::NDRange(activeVoxels),
-            cl::NullRange
+            cl::NDRange(numberOfThreads),
+            cl::NDRange(groupSize)
         );
 
         activeSet = activeSet2;

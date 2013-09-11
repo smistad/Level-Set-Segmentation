@@ -20,7 +20,10 @@ __kernel void updateLevelSetFunction(
         __private float epsilon,
         __private float alpha
         ) {
-    const int3 position = vload3(get_global_id(0), positions);
+    int id = get_global_id(0);
+    if(id >= activeVoxels)
+        id = 0;
+    const int3 position = vload3(id, positions);
     const int x = position.x;
     const int y = position.y;
     const int z = position.z;
@@ -116,7 +119,7 @@ __kernel void updateLevelSetFunction(
 
     // Stability CFL
     // max(fabs(speed*gradient.length()))
-    float deltaT = 0.1f;
+    float deltaT = 1.0f;
 
     // Update the level set function phi
     WRITE_RESULT(phi_write, pos, read_imagef(phi_read,sampler,pos).x + deltaT*speed*length(gradient));
@@ -277,9 +280,13 @@ __kernel void updateActiveSet(
         __write_only image3d_t activeSet,
         __private char narrowBandDistance,
         __read_only image3d_t previousActiveSet,
-        __read_only image3d_t borderSet
+        __read_only image3d_t borderSet,
+        __private int activeVoxels
         ) {
-    const int3 position = vload3(get_global_id(0), positions);
+    int id = get_global_id(0);
+    if(id >= activeVoxels)
+        id = 0;
+    const int3 position = vload3(id, positions);
     // if voxel is border voxel
     bool isBorderVoxels = false, negativeFound = false, positiveFound = false;
     for(int x = -1; x < 2; x++) {
