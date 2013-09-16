@@ -9,5 +9,5 @@ include_directories(${OCL-Utilities_INCLUDE_DIRS})
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O3 -DKERNELS_DIR=\\\"${PROJECT_SOURCE_DIR}/\\\"")
 
-add_executable(levelSetSeg main.cpp histogram-pyramids.cpp)
+add_executable(levelSetSeg main.cpp levelSet.cpp histogram-pyramids.cpp)
 target_link_libraries(levelSetSeg SIPL OCL-Utilities)
