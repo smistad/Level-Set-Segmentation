@@ -4,7 +4,7 @@ using namespace std;
 
 int main(int argc, char ** argv) {
 
-    if(argc < 11) {
+    if(argc < 10) {
         cout << endl;
         cout << "OpenCL Level Set Segmentation by Erik Smistad 2013" << endl;
         cout << "www.github.com/smistad/OpenCL-Level-Set-Segmentation/" << endl;
@@ -44,9 +44,6 @@ int main(int argc, char ** argv) {
                 window,
                 outputFilename
         );
-
-
-
     } catch(cl::Error &e) {
         cout << "OpenCL error occurred: " << e.what() << " " << getCLErrorString(e.err()) << endl;
     }
