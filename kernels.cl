@@ -20,9 +20,7 @@ __kernel void updateLevelSetFunction(
         __private float epsilon,
         __private float alpha
         ) {
-    int id = get_global_id(0);
-    if(id >= activeVoxels)
-        id = 0;
+    int id = get_global_id(0) >= activeVoxels ? 0 : get_global_id(0);
     const int3 position = vload3(id, positions);
     const int x = position.x;
     const int y = position.y;
@@ -114,15 +112,14 @@ __kernel void updateLevelSetFunction(
     } else {
         gradient = gradientMax;
     }
-    if(length(gradient) > 1.0f)
-        gradient = normalize(gradient);
+    const float gradLength = length(gradient) > 1.0f ? 1.0f : length(gradient);
 
     // Stability CFL
     // max(fabs(speed*gradient.length()))
     float deltaT = 1.0f;
 
     // Update the level set function phi
-    WRITE_RESULT(phi_write, pos, read_imagef(phi_read,sampler,pos).x + deltaT*speed*length(gradient));
+    WRITE_RESULT(phi_write, pos, read_imagef(phi_read,sampler,pos).x + deltaT*speed*gradLength);
 }
 
 __kernel void initializeLevelSetFunction(
@@ -171,9 +168,7 @@ __kernel void updateActiveSet(
         __read_only image3d_t borderSet,
         __private int activeVoxels
         ) {
-    int id = get_global_id(0);
-    if(id >= activeVoxels)
-        id = 0;
+    int id = get_global_id(0) >= activeVoxels ? 0 : get_global_id(0);
     const int3 position = vload3(id, positions);
     // if voxel is border voxel
     bool isBorderVoxels = false, negativeFound = false, positiveFound = false;

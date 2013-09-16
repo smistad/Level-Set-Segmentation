@@ -109,16 +109,39 @@ void visualizeSpeedFunction(OpenCL &ocl, cl::Image3D &speedFunction, int3 size) 
 }
 
 
-Volume<float> * runLevelSet(
-        OpenCL &ocl,
-        Volume<float> * input,
+void runLevelSet(
+        const char * filename,
         int3 seedPos,
         float seedRadius,
         int iterations,
         float threshold,
         float epsilon,
-        float alpha
+        float alpha,
+        bool visualizeResult,
+        float level,
+        float window,
+        std::string outputFilename
         ) {
+
+    // Create OpenCL context
+    OpenCL ocl;
+    ocl.context = createCLContext(CL_DEVICE_TYPE_GPU, VENDOR_ANY);
+    VECTOR_CLASS<cl::Device> devices = ocl.context.getInfo<CL_CONTEXT_DEVICES>();
+    std::cout << "Using device: " << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
+    ocl.device = devices[0];
+    ocl.queue = cl::CommandQueue(ocl.context, devices[0]);
+    string kernelFilename = string(KERNELS_DIR) + string("kernels.cl");
+    string buildOptions = "";
+    if(ocl.device.getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") == 0)
+        buildOptions = "-DNO_3D_WRITE";
+    ocl.program = buildProgramFromSource(ocl.context, kernelFilename);
+
+    // Load volume
+    Volume<float> * input = new Volume<float>(filename);
+    float3 spacing = input->getSpacing();
+
+    std::cout << "Dataset of size " << input->getWidth() << ", " << input->getHeight() << ", " << input->getDepth() << " loaded "<< std::endl;
+
     int3 size = input->getSize();
     cl::Image3D inputData = cl::Image3D(
             ocl.context,
@@ -202,6 +225,8 @@ Volume<float> * runLevelSet(
 
     HistogramPyramid3D hp(ocl);
     const int groupSize = 128;
+    //const float timestep = 1.0f;
+    //const int levelSetUpdates = 4*narrowBandDistance / timestep;
     //visualizeActiveSet(ocl, activeSet, size);
     int narrowBands = 1000;
     for(int i = 0; i < narrowBands; i++) {
@@ -297,7 +322,28 @@ Volume<float> * runLevelSet(
 
     phi->setData(data);
 
-    return phi;
+   if(outputFilename != "") {
+        // Store result
+        Volume<char> * segmentation = new Volume<char>(phi->getSize());
+        segmentation->setSpacing(spacing);
+        for(int i = 0; i < phi->getTotalSize(); i++) {
+            if(phi->get(i) < 0.0f) {
+                segmentation->set(i, 1);
+            } else {
+                segmentation->set(i, 0);
+            }
+        }
+
+        segmentation->save(outputFilename.c_str());
+        delete segmentation;
+    }
+    // Visualize result
+    if(visualizeResult) {
+        visualize(input, phi, level, window);
+    } else {
+        delete input;
+        delete phi;
+    }
 }
 
 int main(int argc, char ** argv) {
@@ -308,57 +354,42 @@ int main(int argc, char ** argv) {
         cout << "www.github.com/smistad/OpenCL-Level-Set-Segmentation/" << endl;
         cout << "======================================================" << endl;
         cout << "The speed function is defined as -alpha*(epsilon-(T-intensity))+(1-alpha)*curvature" << endl;
-        cout << "Usage: " << argv[0] << " inputFile.mhd outputFile.mhd seedX seedY seedZ seedRadius iterations threshold epsilon alpha [level window]" << endl;
+        cout << "Usage: " << argv[0] << " inputFile.mhd seedX seedY seedZ seedRadius iterations threshold epsilon alpha [level window] [outputFile.mhd]" << endl;
         cout << "If the level and window arguments are set, the segmentation result will be displayed as an overlay to the input volume " << endl;
         return -1;
     }
 
-    // Create OpenCL context
-    OpenCL ocl;
-    ocl.context = createCLContext(CL_DEVICE_TYPE_GPU, VENDOR_ANY);
-    VECTOR_CLASS<cl::Device> devices = ocl.context.getInfo<CL_CONTEXT_DEVICES>();
-    std::cout << "Using device: " << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
-    ocl.device = devices[0];
-    ocl.queue = cl::CommandQueue(ocl.context, devices[0]);
-    string filename = string(KERNELS_DIR) + string("kernels.cl");
-    string buildOptions = "";
-    if(ocl.device.getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") == 0)
-        buildOptions = "-DNO_3D_WRITE";
-    ocl.program = buildProgramFromSource(ocl.context, filename);
-
-    // Load volume
-    Volume<float> * input = new Volume<float>(argv[1]);
-    float3 spacing = input->getSpacing();
-
-    std::cout << "Dataset of size " << input->getWidth() << ", " << input->getHeight() << ", " << input->getDepth() << " loaded "<< std::endl;
-
     // Set initial mask
     int3 seedPosition(atoi(argv[3]), atoi(argv[4]), atoi(argv[5]));
     float seedRadius = atof(argv[6]);
+    float level = -1.0f;
+    float window = -1.0f;
+    if(argc == 14 || argc == 12) {
+        level = atof(argc == 12 ? argv[10] : argv[11]);
+        window = atof(argc == 12 ? argv[11] : argv[12]);
+    }
+    std::string outputFilename = "";
+    if(argc == 13 || argc == 11) { // filename specified, write to disk
+        outputFilename = argc == 11 ? argv[10] : argv[13];
+    }
 
     // Do level set
     try {
-        Volume<float> * res = runLevelSet(ocl, input, seedPosition, seedRadius, atoi(argv[7]), atof(argv[8]), atof(argv[9]), atof(argv[10]));
+        runLevelSet(
+                argv[1],
+                seedPosition,
+                seedRadius,
+                atoi(argv[7]),
+                atof(argv[8]),
+                atof(argv[9]),
+                atof(argv[10]),
+                window != -1, // visualize
+                level,
+                window,
+                outputFilename
+        );
 
-        // Visualize result
-        if(argc == 13) {
-            float level = atof(argv[11]);
-            float window = atof(argv[12]);
-            visualize(input, res, level, window);
-        }
 
-        // Store result
-        Volume<char> * segmentation = new Volume<char>(res->getSize());
-        segmentation->setSpacing(spacing);
-        for(int i = 0; i < res->getTotalSize(); i++) {
-            if(res->get(i) < 0.0f) {
-                segmentation->set(i, 1);
-            } else {
-                segmentation->set(i, 0);
-            }
-        }
-
-        segmentation->save(argv[2]);
 
     } catch(cl::Error &e) {
         cout << "OpenCL error occurred: " << e.what() << " " << getCLErrorString(e.err()) << endl;
