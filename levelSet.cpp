@@ -1,5 +1,4 @@
 #include "levelSet.hpp"
-#include "SIPL/Visualization.hpp"
 #include "histogram-pyramids.hpp"
 #include <string>
 #include <iostream>
@@ -38,21 +37,8 @@ void updateLevelSetFunction(
     );
 }
 
-void visualize(Volume<float> * input, Volume<float> * phi, float level, float window) {
-    Volume<char> * seg = new Volume<char>(input->getSize());
-    for(int i = 0; i < input->getTotalSize(); i++) {
-        char value = 0;
-        if(phi->get(i) < 0) {
-            value = 1;
-        }
-        seg->set(i,value);
-    }
-    Visualization * v = new Visualization(input, seg);
-    v->setLevel(input, level);
-    v->setWindow(input, window);
-    v->display();
-}
 
+/*
 void visualizeActiveSet(OpenCL &ocl, cl::Image3D &activeSet, int3 size) {
     char * data = new char[size.x*size.y*size.z];
     cl::size_t<3> origin;
@@ -104,20 +90,17 @@ void visualizeSpeedFunction(OpenCL &ocl, cl::Image3D &speedFunction, int3 size) 
     activeSetImage->setData(data);
     activeSetImage->display();
 }
+*/
 
 
-void runLevelSet(
+SIPL::Volume<char> * runLevelSet(
         const char * filename,
         int3 seedPos,
         float seedRadius,
         int iterations,
         float threshold,
         float epsilon,
-        float alpha,
-        bool visualizeResult,
-        float level,
-        float window,
-        std::string outputFilename
+        float alpha
         ) {
 
     // Create OpenCL context
@@ -220,7 +203,7 @@ void runLevelSet(
     cl::Kernel updateBorderSetKernel(ocl.program, "updateBorderSet");
 
 
-    HistogramPyramid3D hp(ocl);
+    HistogramPyramid3D * hp = new HistogramPyramid3D(ocl);
     const int groupSize = 128;
     //const float timestep = 1.0f;
     //const int levelSetUpdates = 4*narrowBandDistance / timestep;
@@ -229,13 +212,13 @@ void runLevelSet(
     for(int i = 0; i < narrowBands; i++) {
         //if(i % 10 == 0)
         //visualizeActiveSet(ocl, activeSet, size);
-        hp.create(activeSet, size.x, size.y, size.z);
-        int activeVoxels = hp.getSum();
+        hp->create(activeSet, size.x, size.y, size.z);
+        int activeVoxels = hp->getSum();
         if(activeVoxels == 0)
             break;
         int numberOfThreads = activeVoxels+groupSize-(activeVoxels-(activeVoxels / groupSize)*groupSize);
         std::cout << "Number of active voxels: " << activeVoxels << std::endl;
-        cl::Buffer positions = hp.createPositionBuffer();
+        cl::Buffer positions = hp->createPositionBuffer();
 
         for(int j = 0; j < iterations; j++) {
             if(j % 2 == 0) {
@@ -297,8 +280,9 @@ void runLevelSet(
             cl::NullRange
         );
 
-        hp.deleteHPlevels();
+        hp->deleteHPlevels();
     }
+    std::cout << "Finished level set iterations" << std::endl;
 
 
     if(iterations % 2 != 0) {
@@ -319,27 +303,18 @@ void runLevelSet(
 
     phi->setData(data);
 
-   if(outputFilename != "") {
-        // Store result
-        Volume<char> * segmentation = new Volume<char>(phi->getSize());
-        segmentation->setSpacing(spacing);
-        for(int i = 0; i < phi->getTotalSize(); i++) {
-            if(phi->get(i) < 0.0f) {
-                segmentation->set(i, 1);
-            } else {
-                segmentation->set(i, 0);
-            }
+    Volume<char> * segmentation = new Volume<char>(phi->getSize());
+    segmentation->setSpacing(spacing);
+    for(int i = 0; i < phi->getTotalSize(); i++) {
+        if(phi->get(i) < 0.0f) {
+            segmentation->set(i, 1);
+        } else {
+            segmentation->set(i, 0);
         }
+    }
+    std::cout << "Finished transfering data back to host." << std::endl;
 
-        segmentation->save(outputFilename.c_str());
-        delete segmentation;
-    }
-    // Visualize result
-    if(visualizeResult) {
-        visualize(input, phi, level, window);
-    } else {
-        delete input;
-        delete phi;
-    }
+
+    return segmentation;
 }
 

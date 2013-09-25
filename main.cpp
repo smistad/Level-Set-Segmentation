@@ -1,6 +1,14 @@
 #include "levelSet.hpp"
+#include "SIPL/Visualization.hpp"
 #include <iostream>
 using namespace std;
+
+void visualize(SIPL::Volume<float> * input, SIPL::Volume<char> * seg, float level, float window) {
+    SIPL::Visualization * v = new SIPL::Visualization(input, seg);
+    v->setLevel(input, level);
+    v->setWindow(input, window);
+    v->display();
+}
 
 int main(int argc, char ** argv) {
 
@@ -31,19 +39,25 @@ int main(int argc, char ** argv) {
 
     // Do level set
     try {
-        runLevelSet(
+        SIPL::Volume<char> * segmentation = runLevelSet(
                 argv[1],
                 seedPosition,
                 seedRadius,
                 atoi(argv[6]),
                 atof(argv[7]),
                 atof(argv[8]),
-                atof(argv[9]),
-                window != -1, // visualize
-                level,
-                window,
-                outputFilename
+                atof(argv[9])
         );
+
+        // Visualize result
+        if(window != -1.0f) {
+            SIPL::Volume<float> * input = new SIPL::Volume<float>(argv[1]);
+            visualize(input, segmentation, level, window);
+        }
+        if(outputFilename != "") {
+            segmentation->save(outputFilename.c_str());
+        }
+        delete segmentation;
     } catch(cl::Error &e) {
         cout << "OpenCL error occurred: " << e.what() << " " << getCLErrorString(e.err()) << endl;
     }

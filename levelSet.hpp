@@ -4,18 +4,14 @@
 #include "SIPL/Core.hpp"
 #include "commons.hpp"
 
-void runLevelSet(
+SIPL::Volume<char> * runLevelSet(
         const char * filename,
         SIPL::int3 seedPos,
         float seedRadius,
         int iterations,
         float threshold,
         float epsilon,
-        float alpha,
-        bool visualizeResult,
-        float level,
-        float window,
-        std::string outputFilename
+        float alpha
 );
 
 
