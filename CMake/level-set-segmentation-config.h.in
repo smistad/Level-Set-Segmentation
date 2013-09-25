@@ -1,0 +1,2 @@
+// directory containing kernel files
+#define KERNELS_DIR "@KERNELS_DIR@"
