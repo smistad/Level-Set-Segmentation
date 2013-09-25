@@ -3,11 +3,9 @@
 #include "histogram-pyramids.hpp"
 #include <string>
 #include <iostream>
+#include "config.h"
 using namespace SIPL;
 
-#ifndef KERNELS_DIR
-#define KERNELS_DIR ""
-#endif
 void updateLevelSetFunction(
         OpenCL &ocl,
         cl::Kernel &kernel,
@@ -129,7 +127,7 @@ void runLevelSet(
     std::cout << "Using device: " << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
     ocl.device = devices[0];
     ocl.queue = cl::CommandQueue(ocl.context, devices[0]);
-    std::string kernelFilename = std::string(KERNELS_DIR) + std::string("kernels.cl");
+    std::string kernelFilename = std::string(KERNELS_DIR) + std::string("/kernels.cl");
     std::string buildOptions = "";
     if(ocl.device.getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") == 0)
         buildOptions = "-DNO_3D_WRITE";
