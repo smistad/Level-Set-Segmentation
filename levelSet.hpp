@@ -2,7 +2,6 @@
 #define LEVELSET_HPP_
 
 #include "SIPL/Core.hpp"
-#include "commons.hpp"
 
 SIPL::Volume<char> * runLevelSet(
         const char * filename,

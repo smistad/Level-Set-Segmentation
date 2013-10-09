@@ -1,5 +1,5 @@
 #include "levelSet.hpp"
-#include "histogram-pyramids.hpp"
+#include "OpenCLUtilities/histogram-pyramids.hpp"
 #include <string>
 #include <iostream>
 #include "config.h"
@@ -203,7 +203,6 @@ SIPL::Volume<char> * runLevelSet(
     cl::Kernel updateBorderSetKernel(ocl.program, "updateBorderSet");
 
 
-    HistogramPyramid3D * hp = new HistogramPyramid3D(ocl);
     const int groupSize = 128;
     //const float timestep = 1.0f;
     //const int levelSetUpdates = 4*narrowBandDistance / timestep;
@@ -212,13 +211,14 @@ SIPL::Volume<char> * runLevelSet(
     for(int i = 0; i < narrowBands; i++) {
         //if(i % 10 == 0)
         //visualizeActiveSet(ocl, activeSet, size);
-        hp->create(activeSet, size.x, size.y, size.z);
-        int activeVoxels = hp->getSum();
+        HistogramPyramid3D hp(ocl);
+        hp.create(activeSet, size.x, size.y, size.z);
+        int activeVoxels = hp.getSum();
         if(activeVoxels == 0)
             break;
         int numberOfThreads = activeVoxels+groupSize-(activeVoxels-(activeVoxels / groupSize)*groupSize);
         std::cout << "Number of active voxels: " << activeVoxels << std::endl;
-        cl::Buffer positions = hp->createPositionBuffer();
+        cl::Buffer positions = hp.createPositionBuffer();
 
         for(int j = 0; j < iterations; j++) {
             if(j % 2 == 0) {
@@ -279,8 +279,6 @@ SIPL::Volume<char> * runLevelSet(
             cl::NDRange(size.x,size.y,size.z),
             cl::NullRange
         );
-
-        hp->deleteHPlevels();
     }
     std::cout << "Finished level set iterations" << std::endl;
 
@@ -313,7 +311,6 @@ SIPL::Volume<char> * runLevelSet(
         }
     }
     std::cout << "Finished transfering data back to host." << std::endl;
-
 
     return segmentation;
 }

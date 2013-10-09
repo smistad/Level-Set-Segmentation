@@ -1,4 +1,5 @@
 #include "levelSet.hpp"
+#include "OpenCLUtilities/openCLUtilities.hpp"
 #include "SIPL/Visualization.hpp"
 #include <iostream>
 using namespace std;
