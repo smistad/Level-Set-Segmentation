@@ -15,10 +15,10 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O3")
 
 include_directories(${PROJECT_BINARY_DIR})
 
-add_executable(levelSetSeg main.cpp levelSet.cpp histogram-pyramids.cpp)
+add_executable(levelSetSeg main.cpp levelSet.cpp)
 target_link_libraries(levelSetSeg SIPL OCL-Utilities)
 
-add_library(levelSetSegLib levelSet.cpp histogram-pyramids.cpp)
+add_library(levelSetSegLib levelSet.cpp)
 target_link_libraries(levelSetSegLib SIPL OCL-Utilities)
 
 set(KERNELS_DIR ${PROJECT_SOURCE_DIR})
