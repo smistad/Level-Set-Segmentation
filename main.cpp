@@ -51,14 +51,15 @@ int main(int argc, char ** argv) {
         );
 
         // Visualize result
-        if(window != -1.0f) {
-            SIPL::Volume<float> * input = new SIPL::Volume<float>(argv[1]);
-            visualize(input, segmentation, level, window);
-        }
         if(outputFilename != "") {
             segmentation->save(outputFilename.c_str());
         }
-        delete segmentation;
+        if(window != -1.0f) {
+            SIPL::Volume<float> * input = new SIPL::Volume<float>(argv[1]);
+            visualize(input, segmentation, level, window);
+        } else {
+            delete segmentation;
+        }
     } catch(cl::Error &e) {
         cout << "OpenCL error occurred: " << e.what() << " " << getCLErrorString(e.err()) << endl;
     }
