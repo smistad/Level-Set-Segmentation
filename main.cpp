@@ -29,9 +29,9 @@ int main(int argc, char ** argv) {
     float seedRadius = atof(argv[5]);
     float level = -1.0f;
     float window = -1.0f;
-    if(argc == 14 || argc == 12) {
-        level = atof(argc == 12 ? argv[10] : argv[11]);
-        window = atof(argc == 12 ? argv[11] : argv[12]);
+    if(argc == 13 || argc == 12) {
+        level = atof(argv[10]);
+        window = atof(argv[11]);
     }
     std::string outputFilename = "";
     if(argc == 13 || argc == 11) { // filename specified, write to disk
