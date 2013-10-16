@@ -35,7 +35,7 @@ int main(int argc, char ** argv) {
     }
     std::string outputFilename = "";
     if(argc == 13 || argc == 11) { // filename specified, write to disk
-        outputFilename = argc == 11 ? argv[10] : argv[13];
+        outputFilename = argc == 11 ? argv[10] : argv[12];
     }
 
     // Do level set
@@ -50,10 +50,12 @@ int main(int argc, char ** argv) {
                 atof(argv[9])
         );
 
-        // Visualize result
+        // Write to disk
         if(outputFilename != "") {
+            std::cout << "Writing results to " << outputFilename << std::endl;
             segmentation->save(outputFilename.c_str());
         }
+        // Visualize result
         if(window != -1.0f) {
             SIPL::Volume<float> * input = new SIPL::Volume<float>(argv[1]);
             visualize(input, segmentation, level, window);
