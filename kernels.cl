@@ -22,6 +22,11 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 
 #endif
 
+bool inBounds(int3 pos, int3 size) {
+    return pos.x >= 0 && pos.y >= 0 && pos.z >= 0 &&
+            pos.x < size.x && pos.y < size.y && pos.z < size.z;
+}
+
 __kernel void updateLevelSetFunction(
         __read_only image3d_t input,
         __global int * positions,
@@ -198,6 +203,8 @@ __kernel void updateActiveSet(
     for(int y = -1; y < 2; y++) {
     for(int z = -1; z < 2; z++) {
         int3 n = position + (int3)(x,y,z);
+        if(!inBounds(n,size))
+            continue;
         if(READ_FLOAT(phi, n.xyzz) < 0.0f) {
             negativeFound = true;
         }else{
@@ -216,6 +223,8 @@ __kernel void updateActiveSet(
                     continue;
 
                 int3 n = position + (int3)(x,y,z);
+                if(!inBounds(n,size))
+                    continue;
                 WRITE_INT(activeSet, n.xyzz, 1);
             }}}
         }
@@ -227,12 +236,14 @@ __kernel void updateBorderSet(
         __read_only FLOAT_TYPE phi
         ) {
     const int3 position = {get_global_id(0), get_global_id(1), get_global_id(2)};
-    int4 size = {get_global_size(0), get_global_size(1), get_global_size(2), 0};
+    int3 size = {get_global_size(0), get_global_size(1), get_global_size(2)};
     bool isBorderVoxels = false, negativeFound = false, positiveFound = false;
     for(int x = -1; x < 2; x++) {
     for(int y = -1; y < 2; y++) {
     for(int z = -1; z < 2; z++) {
         int3 n = position + (int3)(x,y,z);
+        if(!inBounds(n,size))
+            continue;
         if(READ_FLOAT(phi, n.xyzz) < 0.0f) {
             negativeFound = true;
         }else{
