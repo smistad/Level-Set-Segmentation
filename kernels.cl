@@ -5,10 +5,10 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 
 #define FLOAT_TYPE __global float *
 #define CHAR_TYPE __global char *
-#define READ_FLOAT(buffer, pos) buffer[(pos).x+(pos).y*get_global_size(0)+(pos).z*get_global_size(0)*get_global_size(1)]
-#define READ_INT(buffer,pos) buffer[(pos).x+(pos).y*get_global_size(0)+(pos).z*get_global_size(0)*get_global_size(1)]
-#define WRITE_FLOAT(storage, pos, value) storage[(pos).x+(pos).y*get_global_size(0)+(pos).z*get_global_size(0)*get_global_size(1)] = value;
-#define WRITE_INT(storage, pos, value) storage[(pos).x+(pos).y*get_global_size(0)+(pos).z*get_global_size(0)*get_global_size(1)] = value;
+#define READ_FLOAT(buffer, pos) buffer[(pos).x+(pos).y*size.x+(pos).z*size.x*size.y]
+#define READ_INT(buffer,pos) buffer[(pos).x+(pos).y*size.x+(pos).z*size.x*size.y]
+#define WRITE_FLOAT(storage, pos, value) storage[(pos).x+(pos).y*size.x+(pos).z*size.x*size.y] = value;
+#define WRITE_INT(storage, pos, value) storage[(pos).x+(pos).y*size.x+(pos).z*size.x*size.y] = value;
 
 #else
 
@@ -21,7 +21,6 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 #define READ_INT(image,pos) read_imagei(image,sampler,pos).x
 
 #endif
-
 
 __kernel void updateLevelSetFunction(
         __read_only image3d_t input,
@@ -38,7 +37,11 @@ __kernel void updateLevelSetFunction(
     const int x = position.x;
     const int y = position.y;
     const int z = position.z;
-    const int4 pos = {x,y,z,0};
+    const int4 writePos = {x,y,z,0};
+    int4 size = {get_image_width(input), get_image_height(input), get_image_depth(input), 0};
+    int4 pos = writePos;
+    pos = select(pos, (int4)(1,1,1,0), pos == (int4)(0,0,0,0));
+    pos = select(pos, size-2, pos >= size-1);
 
     // Calculate all first order derivatives
     float3 D = {
@@ -132,7 +135,7 @@ __kernel void updateLevelSetFunction(
     float deltaT = 1.0f;
 
     // Update the level set function phi
-    WRITE_FLOAT(phi_write, pos, READ_FLOAT(phi_read,pos) + deltaT*speed*gradLength);
+    WRITE_FLOAT(phi_write, writePos, READ_FLOAT(phi_read,pos) + deltaT*speed*gradLength);
 }
 
 __kernel void initializeLevelSetFunction(
@@ -147,6 +150,7 @@ __kernel void initializeLevelSetFunction(
         __write_only CHAR_TYPE borderSet
         ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
+    int4 size = {get_global_size(0), get_global_size(1), get_global_size(2), 0};
 
     float dist = distance((float3)(seedX,seedY,seedZ), convert_float3(pos.xyz)) - radius;
     WRITE_FLOAT(phi, pos, dist);
@@ -169,6 +173,7 @@ __kernel void initializeLevelSetFunction(
 __kernel void init3DImage(
     __write_only CHAR_TYPE image
     ) {
+    int4 size = {get_global_size(0), get_global_size(1), get_global_size(2), 0};
     WRITE_INT(image, (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0), 0);
 }
 
@@ -179,10 +184,14 @@ __kernel void updateActiveSet(
         __private char narrowBandDistance,
         __read_only CHAR_TYPE previousActiveSet,
         __read_only CHAR_TYPE borderSet,
-        __private int activeVoxels
+        __private int activeVoxels,
+        __private int sizeX,
+        __private int sizeY,
+        __private int sizeZ
         ) {
     int id = get_global_id(0) >= activeVoxels ? 0 : get_global_id(0);
     const int3 position = vload3(id, positions);
+    const int3 size = {sizeX,sizeY,sizeZ};
     // if voxel is border voxel
     bool isBorderVoxels = false, negativeFound = false, positiveFound = false;
     for(int x = -1; x < 2; x++) {
@@ -218,6 +227,7 @@ __kernel void updateBorderSet(
         __read_only FLOAT_TYPE phi
         ) {
     const int3 position = {get_global_id(0), get_global_id(1), get_global_id(2)};
+    int4 size = {get_global_size(0), get_global_size(1), get_global_size(2), 0};
     bool isBorderVoxels = false, negativeFound = false, positiveFound = false;
     for(int x = -1; x < 2; x++) {
     for(int y = -1; y < 2; y++) {
