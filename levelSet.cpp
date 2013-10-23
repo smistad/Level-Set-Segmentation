@@ -113,11 +113,12 @@ SIPL::Volume<char> * runLevelSet(
     std::string kernelFilename = std::string(KERNELS_DIR) + std::string("/kernels.cl");
     std::string buildOptions = "";
     bool useImageWrites = true;
-    if(ocl.device.getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") == 0) {
+    //if(ocl.device.getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") == 0) {
+        std::cout << "Writing to 3D images is not supported on selected device. Using regular buffers instead. This will reduce performance." << std::endl;
         buildOptions = "-DNO_3D_WRITE";
         useImageWrites = false;
-    }
-    ocl.program = buildProgramFromSource(ocl.context, kernelFilename);
+    //}
+    ocl.program = buildProgramFromSource(ocl.context, kernelFilename, buildOptions);
 
     // Load volume
     Volume<float> * input = new Volume<float>(filename);
@@ -252,10 +253,10 @@ SIPL::Volume<char> * runLevelSet(
             ((HistogramPyramid3DBuffer*)hp)->create(*((cl::Buffer*)activeSet), size.x, size.y, size.z);
         }
         int activeVoxels = hp->getSum();
+        std::cout << "Number of active voxels: " << activeVoxels << std::endl;
         if(activeVoxels == 0)
             break;
         int numberOfThreads = activeVoxels+groupSize-(activeVoxels-(activeVoxels / groupSize)*groupSize);
-        std::cout << "Number of active voxels: " << activeVoxels << std::endl;
         cl::Buffer positions = hp->createPositionBuffer();
         delete hp;
 
