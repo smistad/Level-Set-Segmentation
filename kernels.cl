@@ -5,6 +5,8 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 
 #define FLOAT_TYPE __global float *
 #define CHAR_TYPE __global char *
+#define READ_ONLY
+#define WRITE_ONLY
 #define READ_FLOAT(buffer, pos) buffer[(pos).x+(pos).y*size.x+(pos).z*size.x*size.y]
 #define READ_INT(buffer,pos) buffer[(pos).x+(pos).y*size.x+(pos).z*size.x*size.y]
 #define WRITE_FLOAT(storage, pos, value) storage[(pos).x+(pos).y*size.x+(pos).z*size.x*size.y] = value;
@@ -15,6 +17,8 @@ __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP
 #pragma OPENCL EXTENSION cl_khr_3d_image_writes : enable
 #define FLOAT_TYPE image3d_t
 #define CHAR_TYPE image3d_t
+#define READ_ONLY __read_only
+#define WRITE_ONLY __write_only
 #define WRITE_FLOAT(storage, pos, value) write_imagef(storage, pos, value)
 #define WRITE_INT(storage, pos, value) write_imagei(storage, pos, value)
 #define READ_FLOAT(image,pos) read_imagef(image,sampler,pos).x
@@ -28,11 +32,11 @@ bool inBounds(int3 pos, int3 size) {
 }
 
 __kernel void updateLevelSetFunction(
-        __read_only image3d_t input,
+        READ_ONLY image3d_t input,
         __global int * positions,
         __private int activeVoxels,
-        __read_only FLOAT_TYPE phi_read,
-        __write_only FLOAT_TYPE phi_write,
+        READ_ONLY FLOAT_TYPE phi_read,
+        WRITE_ONLY FLOAT_TYPE phi_write,
         __private float threshold,
         __private float epsilon,
         __private float alpha
@@ -144,15 +148,15 @@ __kernel void updateLevelSetFunction(
 }
 
 __kernel void initializeLevelSetFunction(
-        __write_only FLOAT_TYPE phi,
+        WRITE_ONLY FLOAT_TYPE phi,
         __private int seedX,
         __private int seedY,
         __private int seedZ,
         __private float radius,
-        __write_only CHAR_TYPE activeSet,
+        WRITE_ONLY CHAR_TYPE activeSet,
         __private char narrowBandDistance,
-        __write_only FLOAT_TYPE phi_2,
-        __write_only CHAR_TYPE borderSet
+        WRITE_ONLY FLOAT_TYPE phi_2,
+        WRITE_ONLY CHAR_TYPE borderSet
         ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
     int4 size = {get_global_size(0), get_global_size(1), get_global_size(2), 0};
@@ -176,7 +180,7 @@ __kernel void initializeLevelSetFunction(
 
 // Intialize 3D image to 0
 __kernel void init3DImage(
-    __write_only CHAR_TYPE image
+    WRITE_ONLY CHAR_TYPE image
     ) {
     int4 size = {get_global_size(0), get_global_size(1), get_global_size(2), 0};
     WRITE_INT(image, (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0), 0);
@@ -184,11 +188,11 @@ __kernel void init3DImage(
 
 __kernel void updateActiveSet(
         __global int * positions,
-        __read_only FLOAT_TYPE phi,
-        __write_only CHAR_TYPE activeSet,
+        READ_ONLY FLOAT_TYPE phi,
+        WRITE_ONLY CHAR_TYPE activeSet,
         __private char narrowBandDistance,
-        __read_only CHAR_TYPE previousActiveSet,
-        __read_only CHAR_TYPE borderSet,
+        READ_ONLY CHAR_TYPE previousActiveSet,
+        READ_ONLY CHAR_TYPE borderSet,
         __private int activeVoxels,
         __private int sizeX,
         __private int sizeY,
@@ -232,8 +236,8 @@ __kernel void updateActiveSet(
 }
 
 __kernel void updateBorderSet(
-        __write_only CHAR_TYPE borderSet,
-        __read_only FLOAT_TYPE phi
+        WRITE_ONLY CHAR_TYPE borderSet,
+        READ_ONLY FLOAT_TYPE phi
         ) {
     const int3 position = {get_global_id(0), get_global_id(1), get_global_id(2)};
     int3 size = {get_global_size(0), get_global_size(1), get_global_size(2)};
