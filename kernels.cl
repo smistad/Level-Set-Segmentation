@@ -1,21 +1,30 @@
-#ifdef NO_3D_WRITE
-#define PHI_WRITE_TYPE __global float *
-#define WRITE_RESULT(storage, pos, value) storage[pos.x+pos.y*get_global_id(0)+pos.z*get_global_id(0)*get_global_id(1)] = value;
-#else
-#pragma OPENCL EXTENSION cl_khr_3d_image_writes : enable
-#define PHI_WRITE_TYPE __write_only image3d_t
-#define WRITE_RESULT(storage, pos, value) write_imagef(storage, pos, value)
-#endif
-
 __constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
 __constant sampler_t hpSampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP | CLK_FILTER_NEAREST;
+
+#ifdef NO_3D_WRITE
+#define FLOAT_TYPE __global float *
+#define CHAR_TYPE __global char *
+#define READ_FLOAT(buffer, pos) buffer[(pos).x+(pos).y*get_global_size(0)+(pos).z*get_global_size(0)*get_global_size(1)]
+#define READ_INT(buffer,pos) buffer[(pos).x+(pos).y*get_global_size(0)+(pos).z*get_global_size(0)*get_global_size(1)]
+#define WRITE_FLOAT(storage, pos, value) storage[(pos).x+(pos).y*get_global_size(0)+(pos).z*get_global_size(0)*get_global_size(1)] = value;
+#define WRITE_INT(storage, pos, value) storage[(pos).x+(pos).y*get_global_size(0)+(pos).z*get_global_size(0)*get_global_size(1)] = value;
+#else
+#pragma OPENCL EXTENSION cl_khr_3d_image_writes : enable
+#define FLOAT_TYPE image3d_t
+#define CHAR_TYPE image3d_t
+#define WRITE_FLOAT(storage, pos, value) write_imagef(storage, pos, value)
+#define WRITE_INT(storage, pos, value) write_imagei(storage, pos, value)
+#define READ_FLOAT(image,pos) read_imagef(image,sampler,pos).x
+#define READ_INT(image,pos) read_imagei(image,sampler,pos).x
+#endif
+
 
 __kernel void updateLevelSetFunction(
         __read_only image3d_t input,
         __global int * positions,
         __private int activeVoxels,
-        __read_only image3d_t phi_read,
-        PHI_WRITE_TYPE phi_write,
+        __read_only FLOAT_TYPE phi_read,
+        __write_only FLOAT_TYPE phi_write,
         __private float threshold,
         __private float epsilon,
         __private float alpha
@@ -29,19 +38,19 @@ __kernel void updateLevelSetFunction(
 
     // Calculate all first order derivatives
     float3 D = {
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y,z,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y,z,0)).x),
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x,y+1,z,0)).x-read_imagef(phi_read,sampler,(int4)(x,y-1,z,0)).x),
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x,y,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x,y,z-1,0)).x)
+            0.5f*(READ_FLOAT(phi_read,(int4)(x+1,y,z,0))-READ_FLOAT(phi_read,(int4)(x-1,y,z,0))),
+            0.5f*(READ_FLOAT(phi_read,(int4)(x,y+1,z,0))-READ_FLOAT(phi_read,(int4)(x,y-1,z,0))),
+            0.5f*(READ_FLOAT(phi_read,(int4)(x,y,z+1,0))-READ_FLOAT(phi_read,(int4)(x,y,z-1,0)))
     };
     float3 Dminus = {
-            read_imagef(phi_read,sampler,pos).x-read_imagef(phi_read,sampler,(int4)(x-1,y,z,0)).x,
-            read_imagef(phi_read,sampler,pos).x-read_imagef(phi_read,sampler,(int4)(x,y-1,z,0)).x,
-            read_imagef(phi_read,sampler,pos).x-read_imagef(phi_read,sampler,(int4)(x,y,z-1,0)).x
+            READ_FLOAT(phi_read,pos)-READ_FLOAT(phi_read,(int4)(x-1,y,z,0)),
+            READ_FLOAT(phi_read,pos)-READ_FLOAT(phi_read,(int4)(x,y-1,z,0)),
+            READ_FLOAT(phi_read,pos)-READ_FLOAT(phi_read,(int4)(x,y,z-1,0))
     };
     float3 Dplus = {
-            read_imagef(phi_read,sampler,(int4)(x+1,y,z,0)).x-read_imagef(phi_read,sampler,pos).x,
-            read_imagef(phi_read,sampler,(int4)(x,y+1,z,0)).x-read_imagef(phi_read,sampler,pos).x,
-            read_imagef(phi_read,sampler,(int4)(x,y,z+1,0)).x-read_imagef(phi_read,sampler,pos).x
+            READ_FLOAT(phi_read,(int4)(x+1,y,z,0))-READ_FLOAT(phi_read,pos),
+            READ_FLOAT(phi_read,(int4)(x,y+1,z,0))-READ_FLOAT(phi_read,pos),
+            READ_FLOAT(phi_read,(int4)(x,y,z+1,0))-READ_FLOAT(phi_read,pos)
     };
 
     // Calculate gradient
@@ -59,32 +68,32 @@ __kernel void updateLevelSetFunction(
     // Calculate all second order derivatives
     float3 DxMinus = {
             0.0f,
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y-1,z,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y-1,z,0)).x),
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y,z-1,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y,z-1,0)).x)
+            0.5f*(READ_FLOAT(phi_read,(int4)(x+1,y-1,z,0))-READ_FLOAT(phi_read,(int4)(x-1,y-1,z,0))),
+            0.5f*(READ_FLOAT(phi_read,(int4)(x+1,y,z-1,0))-READ_FLOAT(phi_read,(int4)(x-1,y,z-1,0)))
     };
     float3 DxPlus = {
             0.0f,
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y+1,z,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y+1,z,0)).x),
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y,z+1,0)).x)
+            0.5f*(READ_FLOAT(phi_read,(int4)(x+1,y+1,z,0))-READ_FLOAT(phi_read,(int4)(x-1,y+1,z,0))),
+            0.5f*(READ_FLOAT(phi_read,(int4)(x+1,y,z+1,0))-READ_FLOAT(phi_read,(int4)(x-1,y,z+1,0)))
     };
     float3 DyMinus = {
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x-1,y+1,z,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y-1,z,0)).x),
+            0.5f*(READ_FLOAT(phi_read,(int4)(x-1,y+1,z,0))-READ_FLOAT(phi_read,(int4)(x-1,y-1,z,0))),
             0.0f,
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x,y+1,z-1,0)).x-read_imagef(phi_read,sampler,(int4)(x,y-1,z-1,0)).x)
+            0.5f*(READ_FLOAT(phi_read,(int4)(x,y+1,z-1,0))-READ_FLOAT(phi_read,(int4)(x,y-1,z-1,0)))
     };
     float3 DyPlus = {
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y+1,z,0)).x-read_imagef(phi_read,sampler,(int4)(x+1,y-1,z,0)).x),
+            0.5f*(READ_FLOAT(phi_read,(int4)(x+1,y+1,z,0))-READ_FLOAT(phi_read,(int4)(x+1,y-1,z,0))),
             0.0f,
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x,y+1,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x,y-1,z+1,0)).x)
+            0.5f*(READ_FLOAT(phi_read,(int4)(x,y+1,z+1,0))-READ_FLOAT(phi_read,(int4)(x,y-1,z+1,0)))
     };
     float3 DzMinus = {
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x-1,y,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x-1,y,z-1,0)).x),
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x,y-1,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x,y-1,z-1,0)).x),
+            0.5f*(READ_FLOAT(phi_read,(int4)(x-1,y,z+1,0))-READ_FLOAT(phi_read,(int4)(x-1,y,z-1,0))),
+            0.5f*(READ_FLOAT(phi_read,(int4)(x,y-1,z+1,0))-READ_FLOAT(phi_read,(int4)(x,y-1,z-1,0))),
             0.0f
     };
     float3 DzPlus = {
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x+1,y,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x+1,y,z-1,0)).x),
-            0.5f*(read_imagef(phi_read,sampler,(int4)(x,y+1,z+1,0)).x-read_imagef(phi_read,sampler,(int4)(x,y+1,z-1,0)).x),
+            0.5f*(READ_FLOAT(phi_read,(int4)(x+1,y,z+1,0))-READ_FLOAT(phi_read,(int4)(x+1,y,z-1,0))),
+            0.5f*(READ_FLOAT(phi_read,(int4)(x,y+1,z+1,0))-READ_FLOAT(phi_read,(int4)(x,y+1,z-1,0))),
             0.0f
     };
 
@@ -103,7 +112,7 @@ __kernel void updateLevelSetFunction(
     float curvature = ((nPlus.x-nMinus.x)+(nPlus.y-nMinus.y)+(nPlus.z-nMinus.z))*0.5f;
 
     // Calculate speed term
-    float speed = -alpha*(epsilon-fabs(threshold-read_imagef(input,sampler,pos).x)) + (1.0f-alpha)*curvature;
+    float speed = -alpha*(epsilon-fabs(threshold-READ_FLOAT(input,pos))) + (1.0f-alpha)*curvature;
 
     // Determine gradient based on speed direction
     float3 gradient;
@@ -119,53 +128,53 @@ __kernel void updateLevelSetFunction(
     float deltaT = 1.0f;
 
     // Update the level set function phi
-    WRITE_RESULT(phi_write, pos, read_imagef(phi_read,sampler,pos).x + deltaT*speed*gradLength);
+    WRITE_FLOAT(phi_write, pos, READ_FLOAT(phi_read,pos) + deltaT*speed*gradLength);
 }
 
 __kernel void initializeLevelSetFunction(
-        PHI_WRITE_TYPE phi,
+        __write_only FLOAT_TYPE phi,
         __private int seedX,
         __private int seedY,
         __private int seedZ,
         __private float radius,
-        __write_only image3d_t activeSet,
+        __write_only CHAR_TYPE activeSet,
         __private char narrowBandDistance,
-        PHI_WRITE_TYPE phi_2,
-        __write_only image3d_t borderSet
+        __write_only FLOAT_TYPE phi_2,
+        __write_only CHAR_TYPE borderSet
         ) {
     const int4 pos = {get_global_id(0), get_global_id(1), get_global_id(2), 0};
 
     float dist = distance((float3)(seedX,seedY,seedZ), convert_float3(pos.xyz)) - radius;
-    WRITE_RESULT(phi, pos, dist);
-    WRITE_RESULT(phi_2, pos, dist);
+    WRITE_FLOAT(phi, pos, dist);
+    WRITE_FLOAT(phi_2, pos, dist);
 
     if(fabs(dist) < narrowBandDistance) {
-        write_imagei(activeSet, pos, 1);
+        WRITE_INT(activeSet, pos, 1);
         if(fabs(dist) <= 1.0f) {
-            write_imagei(borderSet, pos, 1);
+            WRITE_INT(borderSet, pos, 1);
         } else {
-            write_imagei(borderSet, pos, 0);
+            WRITE_INT(borderSet, pos, 0);
         }
     } else {
-        write_imagei(activeSet, pos, 0);
-        write_imagei(borderSet, pos, 0);
+        WRITE_INT(activeSet, pos, 0);
+        WRITE_INT(borderSet, pos, 0);
     }
 }
 
 // Intialize 3D image to 0
 __kernel void init3DImage(
-    __write_only image3d_t image
+    __write_only CHAR_TYPE image
     ) {
-    write_imagei(image, (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0), 0);
+    WRITE_INT(image, (int4)(get_global_id(0), get_global_id(1), get_global_id(2), 0), 0);
 }
 
 __kernel void updateActiveSet(
         __global int * positions,
-        __read_only image3d_t phi,
-        __write_only image3d_t activeSet,
+        __read_only FLOAT_TYPE phi,
+        __write_only CHAR_TYPE activeSet,
         __private char narrowBandDistance,
-        __read_only image3d_t previousActiveSet,
-        __read_only image3d_t borderSet,
+        __read_only CHAR_TYPE previousActiveSet,
+        __read_only CHAR_TYPE borderSet,
         __private int activeVoxels
         ) {
     int id = get_global_id(0) >= activeVoxels ? 0 : get_global_id(0);
@@ -176,7 +185,7 @@ __kernel void updateActiveSet(
     for(int y = -1; y < 2; y++) {
     for(int z = -1; z < 2; z++) {
         int3 n = position + (int3)(x,y,z);
-        if(read_imagef(phi, sampler, n.xyzz).x < 0.0f) {
+        if(READ_FLOAT(phi, n.xyzz) < 0.0f) {
             negativeFound = true;
         }else{
             positiveFound = true;
@@ -186,7 +195,7 @@ __kernel void updateActiveSet(
 
     // Add all neighbors to activeSet
     if(isBorderVoxels) {
-        if(read_imagei(borderSet, sampler, position.xyzz).x == 0) { // not converged
+        if(READ_INT(borderSet, position.xyzz) == 0) { // not converged
             for(int x = -narrowBandDistance; x < narrowBandDistance; x++) {
             for(int y = -narrowBandDistance; y < narrowBandDistance; y++) {
             for(int z = -narrowBandDistance; z < narrowBandDistance; z++) {
@@ -194,15 +203,15 @@ __kernel void updateActiveSet(
                     continue;
 
                 int3 n = position + (int3)(x,y,z);
-                    write_imagei(activeSet, n.xyzz, 1);
+                    WRITE_INT(activeSet, n.xyzz, 1);
             }}}
         }
     }
 }
 
 __kernel void updateBorderSet(
-        __write_only image3d_t borderSet,
-        __read_only image3d_t phi
+        __write_only CHAR_TYPE borderSet,
+        __read_only FLOAT_TYPE phi
         ) {
     const int3 position = {get_global_id(0), get_global_id(1), get_global_id(2)};
     bool isBorderVoxels = false, negativeFound = false, positiveFound = false;
@@ -210,7 +219,7 @@ __kernel void updateBorderSet(
     for(int y = -1; y < 2; y++) {
     for(int z = -1; z < 2; z++) {
         int3 n = position + (int3)(x,y,z);
-        if(read_imagef(phi, sampler, n.xyzz).x < 0.0f) {
+        if(READ_FLOAT(phi, n.xyzz) < 0.0f) {
             negativeFound = true;
         }else{
             positiveFound = true;
@@ -219,10 +228,12 @@ __kernel void updateBorderSet(
     isBorderVoxels = negativeFound && positiveFound;
 
     if(isBorderVoxels) {
-        write_imagei(borderSet, position.xyzz, 1);
+        WRITE_INT(borderSet, position.xyzz, 1);
     }
 }
 
+
+/* Histogram Pyramids */
 
 __constant int4 cubeOffsets2D[4] = {
     {0, 0, 0, 0},
