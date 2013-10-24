@@ -244,21 +244,25 @@ SIPL::Volume<char> * runLevelSet(
     for(int i = 0; i < narrowBands; i++) {
         //if(i % 10 == 0)
         //visualizeActiveSet(ocl, activeSet, size);
-        HistogramPyramid * hp;
+        cl::Buffer positions;
+        int activeVoxels;
         if(useImageWrites) {
-            hp = new HistogramPyramid3D(ocl);
-            ((HistogramPyramid3D*)hp)->create(*((cl::Image3D*)activeSet), size.x, size.y, size.z);
+            HistogramPyramid3D hp = HistogramPyramid3D(ocl);
+            hp.create(*((cl::Image3D *)activeSet), size.x, size.y, size.z);
+            activeVoxels = hp.getSum();
+            if(activeVoxels == 0)
+                break;
+            positions = hp.createPositionBuffer();
         } else {
-            hp = new HistogramPyramid3DBuffer(ocl);
-            ((HistogramPyramid3DBuffer*)hp)->create(*((cl::Buffer*)activeSet), size.x, size.y, size.z);
+            HistogramPyramid3DBuffer hp = HistogramPyramid3DBuffer(ocl);
+            hp.create(*((cl::Buffer*)activeSet), size.x, size.y, size.z);
+            activeVoxels = hp.getSum();
+            if(activeVoxels == 0)
+                break;
+            positions = hp.createPositionBuffer();
         }
-        int activeVoxels = hp->getSum();
         std::cout << "Number of active voxels: " << activeVoxels << std::endl;
-        if(activeVoxels == 0)
-            break;
         int numberOfThreads = activeVoxels+groupSize-(activeVoxels-(activeVoxels / groupSize)*groupSize);
-        cl::Buffer positions = hp->createPositionBuffer();
-        delete hp;
 
         for(int j = 0; j < iterations; j++) {
             if(j % 2 == 0) {
