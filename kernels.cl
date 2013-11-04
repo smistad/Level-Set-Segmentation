@@ -137,11 +137,11 @@ __kernel void updateLevelSetFunction(
     } else {
         gradient = gradientMax;
     }
-    const float gradLength = length(gradient) > 1.0f ? 1.0f : length(gradient);
+    const float gradLength = length(gradient);// > 1.0f ? 1.0f : length(gradient);
 
     // Stability CFL
     // max(fabs(speed*gradient.length()))
-    float deltaT = 1.0f;
+    float deltaT = 0.05f;
 
     // Update the level set function phi
     WRITE_FLOAT(phi_write, writePos, READ_FLOAT(phi_read,pos) + deltaT*speed*gradLength);
