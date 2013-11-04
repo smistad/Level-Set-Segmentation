@@ -13,8 +13,8 @@ void updateLevelSetFunction(
         int activeVoxels,
         int numberOfThreads,
         int groupSize,
-        cl::Image3D &phi_read,
-        cl::Image3D &phi_write,
+        cl::Memory * phi_read,
+        cl::Memory * phi_write,
         float threshold,
         float epsilon,
         float alpha
@@ -23,8 +23,8 @@ void updateLevelSetFunction(
     kernel.setArg(0, input);
     kernel.setArg(1, positions);
     kernel.setArg(2, activeVoxels);
-    kernel.setArg(3, phi_read);
-    kernel.setArg(4, phi_write);
+    kernel.setArg(3, *phi_read);
+    kernel.setArg(4, *phi_write);
     kernel.setArg(5, threshold);
     kernel.setArg(6, epsilon);
     kernel.setArg(7, alpha);
@@ -112,9 +112,13 @@ SIPL::Volume<char> * runLevelSet(
     ocl.queue = cl::CommandQueue(ocl.context, devices[0]);
     std::string kernelFilename = std::string(KERNELS_DIR) + std::string("/kernels.cl");
     std::string buildOptions = "";
-    if(ocl.device.getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") == 0)
+    bool useImageWrites = true;
+    if(ocl.device.getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") == 0) {
+        std::cout << "Writing to 3D images is not supported on selected device. Using regular buffers instead. This will reduce performance." << std::endl;
         buildOptions = "-DNO_3D_WRITE";
-    ocl.program = buildProgramFromSource(ocl.context, kernelFilename);
+        useImageWrites = false;
+    }
+    ocl.program = buildProgramFromSource(ocl.context, kernelFilename, buildOptions);
 
     // Load volume
     Volume<float> * input = new Volume<float>(filename);
@@ -134,53 +138,82 @@ SIPL::Volume<char> * runLevelSet(
             (float *)input->getData()
     );
 
-    cl::Image3D phi_1 = cl::Image3D(
+
+    cl::Memory * phi_1;
+    cl::Memory * phi_2;
+    cl::Memory * borderSet;
+    cl::Memory * activeSet;
+    const int totalSize = size.x*size.y*size.z;
+    if(useImageWrites) {
+        phi_1 = new cl::Image3D(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                cl::ImageFormat(CL_R, CL_FLOAT),
+                input->getWidth(),
+                input->getHeight(),
+                input->getDepth()
+        );
+        phi_2 = new cl::Image3D(
             ocl.context,
             CL_MEM_READ_WRITE,
             cl::ImageFormat(CL_R, CL_FLOAT),
             input->getWidth(),
             input->getHeight(),
             input->getDepth()
-    );
-    cl::Image3D phi_2 = cl::Image3D(
-        ocl.context,
-        CL_MEM_READ_WRITE,
-        cl::ImageFormat(CL_R, CL_FLOAT),
-        input->getWidth(),
-        input->getHeight(),
-        input->getDepth()
-    );
+        );
 
-    cl::Image3D activeSet = cl::Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE,
-            cl::ImageFormat(CL_R, CL_SIGNED_INT8),
-            input->getWidth(),
-            input->getHeight(),
-            input->getDepth()
-    );
+        activeSet = new cl::Image3D(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                cl::ImageFormat(CL_R, CL_SIGNED_INT8),
+                input->getWidth(),
+                input->getHeight(),
+                input->getDepth()
+        );
 
-    cl::Image3D borderSet = cl::Image3D(
-            ocl.context,
-            CL_MEM_READ_WRITE,
-            cl::ImageFormat(CL_R, CL_SIGNED_INT8),
-            input->getWidth(),
-            input->getHeight(),
-            input->getDepth()
-    );
+        borderSet = new cl::Image3D(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                cl::ImageFormat(CL_R, CL_SIGNED_INT8),
+                input->getWidth(),
+                input->getHeight(),
+                input->getDepth()
+        );
+    } else {
+        phi_1 = new cl::Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                totalSize*sizeof(float)
+        );
+        phi_2 = new cl::Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                totalSize*sizeof(float)
+        );
+        activeSet = new cl::Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                totalSize*sizeof(char)
+        );
+        borderSet = new cl::Buffer(
+                ocl.context,
+                CL_MEM_READ_WRITE,
+                totalSize*sizeof(char)
+        );
+    }
 
     // Create seed
     char narrowBandDistance = 4;
     cl::Kernel createSeedKernel(ocl.program, "initializeLevelSetFunction");
-    createSeedKernel.setArg(0, phi_1);
+    createSeedKernel.setArg(0, *phi_1);
     createSeedKernel.setArg(1, seedPos.x);
     createSeedKernel.setArg(2, seedPos.y);
     createSeedKernel.setArg(3, seedPos.z);
     createSeedKernel.setArg(4, seedRadius);
-    createSeedKernel.setArg(5, activeSet);
+    createSeedKernel.setArg(5, *activeSet);
     createSeedKernel.setArg(6, narrowBandDistance);
-    createSeedKernel.setArg(7, phi_2);
-    createSeedKernel.setArg(8, borderSet);
+    createSeedKernel.setArg(7, *phi_2);
+    createSeedKernel.setArg(8, *borderSet);
     ocl.queue.enqueueNDRangeKernel(
             createSeedKernel,
             cl::NullRange,
@@ -211,14 +244,25 @@ SIPL::Volume<char> * runLevelSet(
     for(int i = 0; i < narrowBands; i++) {
         //if(i % 10 == 0)
         //visualizeActiveSet(ocl, activeSet, size);
-        HistogramPyramid3D hp(ocl);
-        hp.create(activeSet, size.x, size.y, size.z);
-        int activeVoxels = hp.getSum();
-        if(activeVoxels == 0)
-            break;
-        int numberOfThreads = activeVoxels+groupSize-(activeVoxels-(activeVoxels / groupSize)*groupSize);
+        cl::Buffer positions;
+        int activeVoxels;
+        if(useImageWrites) {
+            HistogramPyramid3D hp = HistogramPyramid3D(ocl);
+            hp.create(*((cl::Image3D *)activeSet), size.x, size.y, size.z);
+            activeVoxels = hp.getSum();
+            if(activeVoxels == 0)
+                break;
+            positions = hp.createPositionBuffer();
+        } else {
+            HistogramPyramid3DBuffer hp = HistogramPyramid3DBuffer(ocl);
+            hp.create(*((cl::Buffer*)activeSet), size.x, size.y, size.z);
+            activeVoxels = hp.getSum();
+            if(activeVoxels == 0)
+                break;
+            positions = hp.createPositionBuffer();
+        }
         std::cout << "Number of active voxels: " << activeVoxels << std::endl;
-        cl::Buffer positions = hp.createPositionBuffer();
+        int numberOfThreads = activeVoxels+groupSize-(activeVoxels-(activeVoxels / groupSize)*groupSize);
 
         for(int j = 0; j < iterations; j++) {
             if(j % 2 == 0) {
@@ -228,16 +272,26 @@ SIPL::Volume<char> * runLevelSet(
             }
         }
 
-        cl::Image3D activeSet2 = cl::Image3D(
-                ocl.context,
-                CL_MEM_READ_WRITE,
-                cl::ImageFormat(CL_R, CL_SIGNED_INT8),
-                input->getWidth(),
-                input->getHeight(),
-                input->getDepth()
-        );
+        cl::Memory * activeSet2;
+        
+        if(useImageWrites) {
+            activeSet2 = new cl::Image3D(
+                    ocl.context,
+                    CL_MEM_READ_WRITE,
+                    cl::ImageFormat(CL_R, CL_SIGNED_INT8),
+                    input->getWidth(),
+                    input->getHeight(),
+                    input->getDepth()
+            );
+        } else {
+            activeSet2 = new cl::Buffer(
+                    ocl.context,
+                    CL_MEM_READ_WRITE,
+                    totalSize*sizeof(char)
+            );
+        }
 
-        init3DImage.setArg(0, activeSet2);
+        init3DImage.setArg(0, *activeSet2);
         ocl.queue.enqueueNDRangeKernel(
             init3DImage,
             cl::NullRange,
@@ -247,12 +301,15 @@ SIPL::Volume<char> * runLevelSet(
 
         // Create new active set
         updateActiveSetKernel.setArg(0, positions);
-        updateActiveSetKernel.setArg(1, phi_1);
-        updateActiveSetKernel.setArg(2, activeSet2);
+        updateActiveSetKernel.setArg(1, *phi_1);
+        updateActiveSetKernel.setArg(2, *activeSet2);
         updateActiveSetKernel.setArg(3, narrowBandDistance);
-        updateActiveSetKernel.setArg(4, activeSet);
-        updateActiveSetKernel.setArg(5, borderSet);
+        updateActiveSetKernel.setArg(4, *activeSet);
+        updateActiveSetKernel.setArg(5, *borderSet);
         updateActiveSetKernel.setArg(6, activeVoxels);
+        updateActiveSetKernel.setArg(7, size.x);
+        updateActiveSetKernel.setArg(8, size.y);
+        updateActiveSetKernel.setArg(9, size.z);
         ocl.queue.enqueueNDRangeKernel(
             updateActiveSetKernel,
             cl::NullRange,
@@ -260,10 +317,11 @@ SIPL::Volume<char> * runLevelSet(
             cl::NDRange(groupSize)
         );
 
+        delete activeSet;
         activeSet = activeSet2;
 
         // Update border set
-        init3DImage.setArg(0, borderSet);
+        init3DImage.setArg(0, *borderSet);
         ocl.queue.enqueueNDRangeKernel(
             init3DImage,
             cl::NullRange,
@@ -271,8 +329,8 @@ SIPL::Volume<char> * runLevelSet(
             cl::NullRange
         );
 
-        updateBorderSetKernel.setArg(0, borderSet);
-        updateBorderSetKernel.setArg(1, phi_1);
+        updateBorderSetKernel.setArg(0, *borderSet);
+        updateBorderSetKernel.setArg(1, *phi_1);
         ocl.queue.enqueueNDRangeKernel(
             updateBorderSetKernel,
             cl::NullRange,
@@ -280,24 +338,40 @@ SIPL::Volume<char> * runLevelSet(
             cl::NullRange
         );
     }
+    delete activeSet;
+    delete borderSet;
     std::cout << "Finished level set iterations" << std::endl;
 
 
+    /*
     if(iterations % 2 != 0) {
         // Phi_2 was written to in the last iteration, copy this to the result
-        ocl.queue.enqueueCopyImage(phi_2,phi_1,origin,origin,region);
+        ocl.queue.enqueueCopyImage(*((cl::Image3D*)phi_2),*((cl::Image3D*)phi_1),origin,origin,region);
     }
+    */
 
     Volume<float> * phi = new Volume<float>(input->getSize());
     float * data = (float *)phi->getData();
-    ocl.queue.enqueueReadImage(
-            phi_1,
-            CL_TRUE,
-            origin,
-            region,
-            0, 0,
-            data
-    );
+    if(useImageWrites) {
+        ocl.queue.enqueueReadImage(
+                *((cl::Image3D*)phi_1),
+                CL_TRUE,
+                origin,
+                region,
+                0, 0,
+                data
+        );
+    } else {
+        ocl.queue.enqueueReadBuffer(
+                *((cl::Buffer*)phi_1),
+                CL_TRUE,
+                0,
+                sizeof(float)*totalSize,
+                data
+        );
+    }
+    delete phi_1;
+    delete phi_2;
 
     phi->setData(data);
 
