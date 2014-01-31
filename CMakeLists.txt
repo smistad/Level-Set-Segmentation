@@ -7,19 +7,19 @@ add_subdirectory(SIPL)
 find_package(SIPL PATHS "${Level-Set-Segmentation_BINARY_DIR}/SIPL" REQUIRED)
 include(${SIPL_USE_FILE})
 
-add_subdirectory(OpenCLUtilities)
-find_package(OCL-Utilities PATHS "${Level-Set-Segmentation_BINARY_DIR}/OpenCLUtilities" REQUIRED)
-include(${OCL-Utilities_USE_FILE})
+add_subdirectory(OpenCLUtilityLibrary)
+find_package(OpenCLUtilityLibrary PATHS "${Level-Set-Segmentation_BINARY_DIR}/OpenCLUtilityLibrary" REQUIRED)
+include(${OpenCLUtilityLibrary_USE_FILE})
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O3")
 
 include_directories(${PROJECT_BINARY_DIR})
 
 add_executable(levelSetSeg main.cpp levelSet.cpp)
-target_link_libraries(levelSetSeg SIPL OCL-Utilities)
+target_link_libraries(levelSetSeg SIPL OpenCLUtilityLibrary)
 
 add_library(levelSetSegLib levelSet.cpp)
-target_link_libraries(levelSetSegLib SIPL OCL-Utilities)
+target_link_libraries(levelSetSegLib SIPL OpenCLUtilityLibrary)
 
 set(KERNELS_DIR ${PROJECT_SOURCE_DIR})
 

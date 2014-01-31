@@ -1,6 +1,7 @@
 #include "levelSet.hpp"
-#include "OpenCLUtilities/openCLUtilities.hpp"
 #include "SIPL/Visualization.hpp"
+#include "OpenCLUtilityLibrary/OpenCLManager.hpp"
+#include "OpenCLUtilityLibrary/HelperFunctions.hpp"
 #include <iostream>
 using namespace std;
 
@@ -63,7 +64,7 @@ int main(int argc, char ** argv) {
             delete segmentation;
         }
     } catch(cl::Error &e) {
-        cout << "OpenCL error occurred: " << e.what() << " " << getCLErrorString(e.err()) << endl;
+        cout << "OpenCL error occurred: " << e.what() << " " << oul::getCLErrorString(e.err()) << endl;
     }
 
 }

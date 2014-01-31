@@ -1,5 +1,6 @@
 #include "levelSet.hpp"
-#include "OpenCLUtilities/histogram-pyramids.hpp"
+#include "OpenCLManager.hpp"
+#include "HistogramPyramids.hpp"
 #include <string>
 #include <iostream>
 #include "config.h"
@@ -104,12 +105,16 @@ SIPL::Volume<char> * runLevelSet(
         ) {
 
     // Create OpenCL context
+    oul::OpenCLManager * manager = oul::OpenCLManager::getInstance();
+    oul::DeviceCriteria criteria;
+    criteria.setTypeCriteria(oul::DEVICE_TYPE_GPU);
+    criteria.setDeviceCountCriteria(1);
+    oul::Context context = manager->createContext(criteria);
     OpenCL ocl;
-    ocl.context = createCLContext(CL_DEVICE_TYPE_GPU, VENDOR_ANY);
-    VECTOR_CLASS<cl::Device> devices = ocl.context.getInfo<CL_CONTEXT_DEVICES>();
-    std::cout << "Using device: " << devices[0].getInfo<CL_DEVICE_NAME>() << std::endl;
-    ocl.device = devices[0];
-    ocl.queue = cl::CommandQueue(ocl.context, devices[0]);
+    ocl.context = context.getContext();
+    ocl.device = context.getDevice(0);
+    std::cout << "Using device: " << ocl.device.getInfo<CL_DEVICE_NAME>() << std::endl;
+    ocl.queue = context.getQueue(0);
     std::string kernelFilename = std::string(KERNELS_DIR) + std::string("/kernels.cl");
     std::string buildOptions = "";
     bool useImageWrites = true;
@@ -118,7 +123,8 @@ SIPL::Volume<char> * runLevelSet(
         buildOptions = "-DNO_3D_WRITE";
         useImageWrites = false;
     }
-    ocl.program = buildProgramFromSource(ocl.context, kernelFilename, buildOptions);
+    context.createProgramFromSource(kernelFilename, buildOptions);
+    ocl.program = context.getProgram(0);
 
     // Load volume
     Volume<float> * input = new Volume<float>(filename);
@@ -247,14 +253,14 @@ SIPL::Volume<char> * runLevelSet(
         cl::Buffer positions;
         int activeVoxels;
         if(useImageWrites) {
-            HistogramPyramid3D hp = HistogramPyramid3D(ocl);
+            oul::HistogramPyramid3D hp = oul::HistogramPyramid3D(ocl);
             hp.create(*((cl::Image3D *)activeSet), size.x, size.y, size.z);
             activeVoxels = hp.getSum();
             if(activeVoxels == 0)
                 break;
             positions = hp.createPositionBuffer();
         } else {
-            HistogramPyramid3DBuffer hp = HistogramPyramid3DBuffer(ocl);
+            oul::HistogramPyramid3DBuffer hp = oul::HistogramPyramid3DBuffer(ocl);
             hp.create(*((cl::Buffer*)activeSet), size.x, size.y, size.z);
             activeVoxels = hp.getSum();
             if(activeVoxels == 0)
