@@ -130,6 +130,28 @@ SIPL::Volume<char> * runLevelSet(
     Volume<float> * input = new Volume<float>(filename);
     float3 spacing = input->getSpacing();
 
+
+    // Crop the data
+    float percentToRemove = 0.15;
+    int x_offset = SIPL::round(input->getWidth()*percentToRemove);
+    int y_offset = SIPL::round(input->getHeight()*percentToRemove);
+
+    int x_size = input->getWidth() - x_offset*2;
+    int y_size = input->getHeight() - y_offset*2;
+    int z_size = input->getDepth();
+
+    // Make sure the dataset is dividable by 4
+    while(x_size % 4 != 0)
+        x_size--;
+    while(y_size % 4 != 0)
+        y_size--;
+    while(z_size % 4 != 0)
+        z_size--;
+    Region r(x_offset, y_offset, 0, x_size, y_size, z_size);
+    Volume<float> * croppedInput = input->crop(r);
+    input = croppedInput;
+    croppedInput->display();
+
     std::cout << "Dataset of size " << input->getWidth() << ", " << input->getHeight() << ", " << input->getDepth() << " loaded "<< std::endl;
 
     int3 size = input->getSize();
