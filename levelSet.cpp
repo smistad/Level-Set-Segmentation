@@ -113,7 +113,7 @@ SIPL::Volume<char> * runLevelSet(
     std::string kernelFilename = std::string(KERNELS_DIR) + std::string("/kernels.cl");
     std::string buildOptions = "";
     bool useImageWrites = true;
-    if(ocl.device.getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") == 0) {
+    if(ocl.device.getInfo<CL_DEVICE_EXTENSIONS>().find("cl_khr_3d_image_writes") == std::string::npos) {
         std::cout << "Writing to 3D images is not supported on selected device. Using regular buffers instead. This will reduce performance." << std::endl;
         buildOptions = "-DNO_3D_WRITE";
         useImageWrites = false;
