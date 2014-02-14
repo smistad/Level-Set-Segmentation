@@ -1,28 +1,25 @@
-# Find the Level-Set-Segmentation includes and library
+# Level-Set-Segmentation CMake configuration file for use
+# by external projects.
 #
-# Level-Set-Segmentation_INCLUDE_DIR - where to find include files.
-# Level-Set-Segmentation_LIBRARIES - List of fully qualified libraries to link against.
+# The following variabels are defined after the call to find_package
+# ----------
 # Level-Set-Segmentation_FOUND - set to 1 if found.
+# Level-Set-Segmentation_INCLUDE_DIR - where to find include files.
+# Level-Set-Segmentation_LIBRARY_DIRS - where to find libraries
+# Level-Set-Segmentation_BINARY_DIR - build dir
+# Level-Set-Segmentation_KERNELS_DIR - path to dir where opencl kernels are found
+# Level-Set-Segmentation_USE_FILE - path to the use file containing implementation details
 #
 # Usage:
-# Level-Set-Segmentation (Level-Set-Segmentation)
-#----------
-# option(CX_USE_Level-Set-Segmentation "use Level-Set-Segmentation (Level-Set-Segmentation)" OFF)
-# if (CX_USE_Level-Set-Segmentation)
-#    ADD_DEFINITIONS(-DCX_USE_Level-Set-Segmentation)
+# Level-Set-Segmentation
+# ----------
 #    find_package(Level-Set-Segmentation REQUIRED)
 #    include(${Level-Set-Segmentation_USE_FILE})
-# endif()
 #
 
 set (Level-Set-Segmentation_FOUND 1)
-
-set (Level-Set-Segmentation_BINARY_DIR "@Level-Set-Segmentation_BINARY_DIR@")
-
 set (Level-Set-Segmentation_INCLUDE_DIRS "@Level-Set-Segmentation_INCLUDE_DIRS@")
 set (Level-Set-Segmentation_LIBRARY_DIRS "@Level-Set-Segmentation_LIBRARY_DIRS@")
-
-set(Level-Set-Segmentation_KERNELS_DIR "@KERNELS_DIR@")
-
+set (Level-Set-Segmentation_BINARY_DIR "@Level-Set-Segmentation_BINARY_DIR@")
+set (Level-Set-Segmentation_KERNELS_DIR "@KERNELS_DIR@")
 set (Level-Set-Segmentation_USE_FILE "@Level-Set-Segmentation_SOURCE_DIR@/CMake/Level-Set-SegmentationUse.cmake")
-
