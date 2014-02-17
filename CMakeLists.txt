@@ -34,7 +34,7 @@ include_directories(${PROJECT_BINARY_DIR})
 # Targets
 #------------------------------------------------------------------------------
 add_executable(levelSetSeg main.cpp levelSet.cpp)
-target_link_libraries(levelSetSeg SIPL OpenCLUtilityLibrary)
+target_link_libraries(levelSetSeg SIPL OpenCLUtilityLibrary OpenCL)
 
 add_library(levelSetSegLib levelSet.cpp)
 target_link_libraries(levelSetSegLib SIPL OpenCLUtilityLibrary)
