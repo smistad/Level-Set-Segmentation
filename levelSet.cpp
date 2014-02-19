@@ -121,6 +121,7 @@ SIPL::Volume<char> * runLevelSet(
     oul::Context context = manager->createContext(criteria);
     OpenCL ocl;
     ocl.context = context.getContext();
+    ocl.oulContext = context;
     ocl.device = context.getDevice(0);
     std::cout << "Using device: " << ocl.device.getInfo<CL_DEVICE_NAME>() << std::endl;
     ocl.queue = context.getQueue(0);
@@ -136,13 +137,14 @@ SIPL::Volume<char> * runLevelSet(
     ocl.program = context.getProgram(0);
 
     // Also compile the HP code
-    oul::HistogramPyramid::compileCode(ocl.oulContext);
+    oul::HistogramPyramid::compileCode(context);
 
     // Load volume
     Volume<float> * input = new Volume<float>(filename);
     float3 spacing = input->getSpacing();
 
 
+    /*
     // Crop the data
     float percentToRemove = 0.15;
     int x_offset = SIPL::round(input->getWidth()*percentToRemove);
@@ -163,6 +165,7 @@ SIPL::Volume<char> * runLevelSet(
     Volume<float> * croppedInput = input->crop(r);
     input = croppedInput;
     croppedInput->display();
+    */
 
     std::cout << "Dataset of size " << input->getWidth() << ", " << input->getHeight() << ", " << input->getDepth() << " loaded "<< std::endl;
 
