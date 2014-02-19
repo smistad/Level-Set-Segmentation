@@ -1,7 +1,7 @@
 #include "levelSet.hpp"
 #include "SIPL/Visualization.hpp"
-#include "OpenCLUtilityLibrary/OpenCLManager.hpp"
-#include "OpenCLUtilityLibrary/HelperFunctions.hpp"
+#include "OpenCLManager.hpp"
+#include "HelperFunctions.hpp"
 #include <iostream>
 using namespace std;
 
