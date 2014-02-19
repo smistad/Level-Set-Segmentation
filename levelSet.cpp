@@ -5,7 +5,16 @@
 #include <iostream>
 #include "config.h"
 using namespace SIPL;
-
+// TODO The use of this struct will be removed eventually
+typedef struct OpenCL {
+    cl::Context context;
+    cl::CommandQueue queue;
+    cl::Program program;
+    cl::Device device;
+    cl::Platform platform;
+    oul::GarbageCollector * GC;
+    oul::Context oulContext;
+} OpenCL;
 void updateLevelSetFunction(
         OpenCL &ocl,
         cl::Kernel &kernel,
@@ -125,6 +134,9 @@ SIPL::Volume<char> * runLevelSet(
     }
     context.createProgramFromSource(kernelFilename, buildOptions);
     ocl.program = context.getProgram(0);
+
+    // Also compile the HP code
+    oul::HistogramPyramid::compileCode(ocl.oulContext);
 
     // Load volume
     Volume<float> * input = new Volume<float>(filename);
@@ -275,14 +287,14 @@ SIPL::Volume<char> * runLevelSet(
         cl::Buffer positions;
         int activeVoxels;
         if(useImageWrites) {
-            oul::HistogramPyramid3D hp = oul::HistogramPyramid3D(ocl);
+            oul::HistogramPyramid3D hp = oul::HistogramPyramid3D(ocl.oulContext);
             hp.create(*((cl::Image3D *)activeSet), size.x, size.y, size.z);
             activeVoxels = hp.getSum();
             if(activeVoxels == 0)
                 break;
             positions = hp.createPositionBuffer();
         } else {
-            oul::HistogramPyramid3DBuffer hp = oul::HistogramPyramid3DBuffer(ocl);
+            oul::HistogramPyramid3DBuffer hp = oul::HistogramPyramid3DBuffer(ocl.oulContext);
             hp.create(*((cl::Buffer*)activeSet), size.x, size.y, size.z);
             activeVoxels = hp.getSum();
             if(activeVoxels == 0)
